@@ -281,9 +281,9 @@ public class GeckoLibModelLoader {
             Class<?> cacheClass = Class.forName("software.bernie.geckolib.cache.GeckoLibCache");
             Method getModelsMethod = cacheClass.getMethod("getBakedModels");
             Map<?, ?> models = (Map<?, ?>) getModelsMethod.invoke(null);
-            if (models != null && models.containsKey(location)) return true;
+            if (models != null && checkModelPresence(models, location)) return true;
         } catch (Throwable ignored) {}
-        return FALLBACK_MODELS.containsKey(location);
+        return checkModelPresence(FALLBACK_MODELS, location);
     }
 
     public static boolean isAnimationBaked(ResourceLocation location) {
@@ -292,9 +292,42 @@ public class GeckoLibModelLoader {
             Class<?> cacheClass = Class.forName("software.bernie.geckolib.cache.GeckoLibCache");
             Method getAnimsMethod = cacheClass.getMethod("getBakedAnimations");
             Map<?, ?> anims = (Map<?, ?>) getAnimsMethod.invoke(null);
-            if (anims != null && anims.containsKey(location)) return true;
+            if (anims != null && checkAnimationPresence(anims, location)) return true;
         } catch (Throwable ignored) {}
-        return FALLBACK_ANIMATIONS.containsKey(location);
+        return checkAnimationPresence(FALLBACK_ANIMATIONS, location);
+    }
+
+    private static boolean checkModelPresence(Map<?, ?> map, ResourceLocation loc) {
+        if (map == null || loc == null) return false;
+        if (map.containsKey(loc)) return true;
+        String path = loc.getPath();
+        String ns = loc.getNamespace();
+        if (path.isEmpty()) return false;
+        if (path.startsWith("geo/")) {
+            if (map.containsKey(new ResourceLocation(ns, path.substring(4)))) return true;
+        } else {
+            if (map.containsKey(new ResourceLocation(ns, "geo/" + path))) return true;
+        }
+        if (path.startsWith("models/")) {
+            if (map.containsKey(new ResourceLocation(ns, path.substring(7)))) return true;
+        } else {
+            if (map.containsKey(new ResourceLocation(ns, "models/" + path))) return true;
+        }
+        return false;
+    }
+
+    private static boolean checkAnimationPresence(Map<?, ?> map, ResourceLocation loc) {
+        if (map == null || loc == null) return false;
+        if (map.containsKey(loc)) return true;
+        String path = loc.getPath();
+        String ns = loc.getNamespace();
+        if (path.isEmpty()) return false;
+        if (path.startsWith("animations/")) {
+            if (map.containsKey(new ResourceLocation(ns, path.substring(11)))) return true;
+        } else {
+            if (map.containsKey(new ResourceLocation(ns, "animations/" + path))) return true;
+        }
+        return false;
     }
 
     public static Map<ResourceLocation, Object> ensureModifiableModelMap() {

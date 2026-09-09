@@ -16,4 +16,9 @@ dependencies {
     modImplementation "dev.architectury:architectury:$rootProject.architectury_api_version"
 }
 
+task devJar(type: Jar) {
+    archiveClassifier = 'dev'
+    from sourceSets.main.output
+}
+
 
