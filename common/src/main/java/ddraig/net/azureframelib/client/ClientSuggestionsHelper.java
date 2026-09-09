@@ -105,6 +105,62 @@ public class ClientSuggestionsHelper {
                 CACHED_SOUNDS.add(loc.toString());
             }
         } catch (Throwable ignored) {}
+
+        try {
+            Minecraft mc = Minecraft.getInstance();
+            if (mc != null && mc.getSoundManager() != null) {
+                Collection<ResourceLocation> available = mc.getSoundManager().getAvailableSounds();
+                if (available != null) {
+                    for (ResourceLocation loc : available) {
+                        String str = loc.toString();
+                        if (!CACHED_SOUNDS.contains(str)) {
+                            CACHED_SOUNDS.add(str);
+                        }
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
+
+        try {
+            for (String soundId : ddraig.net.azureframelib.resource.AzureResourceManager.getDiscoveredSounds()) {
+                if (!CACHED_SOUNDS.contains(soundId)) {
+                    CACHED_SOUNDS.add(soundId);
+                }
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    public static void addClientAnimationSuggestions(String cleanPath, List<String> results, com.google.gson.Gson gson) {
+        try {
+            if (Minecraft.getInstance() != null) {
+                ResourceLocation rl = cleanPath.contains(":")
+                        ? new ResourceLocation(cleanPath)
+                        : new ResourceLocation("customraces", "animations/" + cleanPath);
+                var res = Minecraft.getInstance().getResourceManager().getResource(rl);
+                if (res.isPresent()) {
+                    try (java.io.InputStreamReader isr = new java.io.InputStreamReader(res.get().open(), java.nio.charset.StandardCharsets.UTF_8)) {
+                        com.google.gson.JsonObject json = gson.fromJson(isr, com.google.gson.JsonObject.class);
+                        if (json != null && json.has("animations") && json.get("animations").isJsonObject()) {
+                            com.google.gson.JsonObject animsObj = json.getAsJsonObject("animations");
+                            for (String key : animsObj.keySet()) {
+                                if (!results.contains(key)) {
+                                    results.add(key);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
+
+        try {
+            List<String> discovered = ddraig.net.azureframelib.resource.AzureResourceManager.getAnimationNamesForModel(cleanPath);
+            for (String key : discovered) {
+                if (!results.contains(key)) {
+                    results.add(key);
+                }
+            }
+        } catch (Throwable ignored) {}
     }
 
     private static void populateParticles() {
