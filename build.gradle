@@ -1,0 +1,140 @@
+plugins {
+    id 'dev.architectury.loom' version '1.11-SNAPSHOT' apply false
+    id 'architectury-plugin' version '3.4-SNAPSHOT'
+    id 'com.gradleup.shadow' version '8.3.6' apply false
+}
+
+def buildNumberFile = file("build_number.txt")
+if (!buildNumberFile.exists()) {
+    buildNumberFile.text = "001"
+}
+def buildNumber = buildNumberFile.text.trim().toInteger()
+def buildNumberStr = String.format("%03d", buildNumber)
+
+ext {
+    buildNumberVal = buildNumber
+    buildNumberStrVal = buildNumberStr
+}
+
+// Workaround for Loom configuration phase requiring project dependency JARs to exist before compile
+["common"].each { projDirName ->
+    def libsDir = file("${projDirName}/build/libs")
+    if (libsDir.exists()) {
+        def targetJar = file("${projDirName}/build/libs/${rootProject.archives_name}-${projDirName}-${rootProject.minecraft_version}-${version}.jar")
+        if (!targetJar.exists()) {
+            def lastJar = libsDir.listFiles().findAll { 
+                it.name.endsWith(".jar") && 
+                !it.name.contains("sources") && 
+                !it.name.contains("transform") &&
+                it.name != targetJar.name 
+            }.sort { it.lastModified() }
+            if (!lastJar.isEmpty()) {
+                def sourceJar = lastJar.last()
+                println "Copying ${sourceJar.name} to ${targetJar.name} for Loom configuration..."
+                targetJar.bytes = sourceJar.bytes
+            }
+        }
+    }
+}
+
+tasks.register("incrementBuildNumber") {
+    doLast {
+        // Check if any task in the execution graph failed
+        boolean anyFailure = false
+        gradle.taskGraph.allTasks.each { task ->
+            if (task.state.failure != null) {
+                anyFailure = true
+            }
+        }
+        if (!anyFailure) {
+            def nextBuildNumber = buildNumber + 1
+            buildNumberFile.text = String.format("%03d", nextBuildNumber)
+            println "Incremented build number to ${String.format('%03d', nextBuildNumber)}"
+        } else {
+            println "Build failed or had task failures. Build number not incremented."
+        }
+    }
+}
+
+
+
+architectury {
+    minecraft = project.minecraft_version
+}
+
+allprojects {
+    group = rootProject.maven_group
+    version = "${rootProject.mod_version}-b${buildNumberStr}${rootProject.mod_tag}"
+}
+
+subprojects {
+    apply plugin: 'dev.architectury.loom'
+    apply plugin: 'architectury-plugin'
+    apply plugin: 'maven-publish'
+
+    base {
+        // Set up a suffixed format for the mod jar names, e.g. `example-fabric`.
+        archivesName = "${rootProject.archives_name}-${project.name}-${rootProject.minecraft_version}"
+    }
+
+    repositories {
+        // Add repositories to retrieve artifacts from in here.
+        // You should only use this when depending on other mods because
+        // Loom adds the essential maven repositories to download Minecraft and libraries from automatically.
+        // See https://docs.gradle.org/current/userguide/declaring_repositories.html
+        // for more information about repositories.
+    }
+
+    loom {
+        silentMojangMappingsLicense()
+    }
+
+    dependencies {
+        minecraft "net.minecraft:minecraft:$rootProject.minecraft_version"
+        mappings loom.officialMojangMappings()
+    }
+
+    java {
+        // Loom will automatically attach sourcesJar to a RemapSourcesJar task and to the "build" task
+        // if it is present.
+        // If you remove this line, sources will not be generated.
+        withSourcesJar()
+
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    tasks.withType(JavaCompile).configureEach {
+        it.options.release = 17
+    }
+
+    // Configure Maven publishing.
+    publishing {
+        publications {
+            mavenJava(MavenPublication) {
+                artifactId = base.archivesName.get()
+                from components.java
+            }
+        }
+
+        // See https://docs.gradle.org/current/userguide/publishing_maven.html for information on how to set up publishing.
+        repositories {
+            // Add repositories to publish to here.
+            // Notice: This block does NOT have the same function as the block in the top level.
+            // The repositories here will be used for publishing your artifact, not for
+            // retrieving dependencies.
+        }
+    }
+}
+
+tasks.register("deployToDev") {
+    dependsOn subprojects.collect { it.tasks.matching { t -> t.name == "deployToDev" } }
+}
+
+allprojects {
+    tasks.configureEach { task ->
+        if (task.name == "deployToDev") {
+            task.finalizedBy(rootProject.tasks.named("incrementBuildNumber"))
+        }
+    }
+}

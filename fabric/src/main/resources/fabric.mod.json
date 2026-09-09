@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "id": "azureframelib",
+  "version": "${version}",
+  "name": "AzureFrameLib",
+  "description": "Shared library and dynamic resource framework for Minecraft mods.",
+  "authors": [
+    "Azureddraig"
+  ],
+  "contact": {
+    "sources": "https://github.com/AzureDDraig/AzureFrameLib"
+  },
+  "license": "CC0-1.0",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "ddraig.net.azureframelib.fabric.AzureFrameLibFabric"
+    ],
+    "client": [
+      "ddraig.net.azureframelib.fabric.client.AzureFrameLibFabricClient"
+    ]
+  },
+  "mixins": [
+    "azureframelib.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.19.3",
+    "minecraft": "~1.20.1",
+    "java": ">=17",
+    "architectury": ">=9.2.14",
+    "fabric": "*"
+  }
+}
