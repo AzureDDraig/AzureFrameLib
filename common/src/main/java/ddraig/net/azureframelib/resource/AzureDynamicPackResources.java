@@ -58,43 +58,44 @@ public class AzureDynamicPackResources implements PackResources {
             return () -> new java.io.ByteArrayInputStream(bytes);
         }
 
-        // 2. Geometry models (.geo.json or .json)
+        // 2. High-speed exact index lookup
+        File indexed = AzureResourceManager.getResourceIndex().get(location);
+        if (indexed != null && indexed.exists()) {
+            return createIoSupplier(location, indexed);
+        }
+
+        // 3. Fallback category search
         if (path.startsWith("geo/") || path.startsWith("models/")) {
-            String modelKey = path.substring(path.indexOf('/') + 1);
-            File file = AzureResourceManager.findModelFile(modelKey);
+            File file = AzureResourceManager.findModelFile(path);
             if (file != null && file.exists()) {
-                return () -> new FileInputStream(file);
+                return createIoSupplier(location, file);
             }
-        }
-
-        // 3. Animations (.animation.json or .json)
-        if (path.startsWith("animations/")) {
-            String animKey = path.substring(11);
-            File file = AzureResourceManager.findAnimationFile(animKey);
+        } else if (path.startsWith("animations/")) {
+            File file = AzureResourceManager.findAnimationFile(path);
             if (file != null && file.exists()) {
-                return () -> new FileInputStream(file);
+                return createIoSupplier(location, file);
             }
-        }
-
-        // 4. Textures (.png)
-        if (path.startsWith("textures/") && path.endsWith(".png")) {
-            String texKey = path.substring(9);
-            File file = AzureResourceManager.findTextureFile(texKey);
+        } else if (path.startsWith("textures/")) {
+            File file = AzureResourceManager.findTextureFile(path);
             if (file != null && file.exists()) {
-                return () -> new FileInputStream(file);
+                return createIoSupplier(location, file);
             }
-        }
-
-        // 5. Sounds (.ogg)
-        if (path.startsWith("sounds/") && path.endsWith(".ogg")) {
-            String soundKey = path.substring(7);
-            File file = AzureResourceManager.findSoundFile(soundKey);
+        } else if (path.startsWith("sounds/")) {
+            File file = AzureResourceManager.findSoundFile(path);
             if (file != null && file.exists()) {
-                return () -> new FileInputStream(file);
+                return createIoSupplier(location, file);
             }
         }
 
         return null;
+    }
+
+    private IoSupplier<InputStream> createIoSupplier(ResourceLocation location, File file) {
+        if (location.getPath().startsWith("animations/") && file.length() == 0) {
+            byte[] fallback = "{\"format_version\":\"1.8.0\",\"animations\":{}}".getBytes(StandardCharsets.UTF_8);
+            return () -> new java.io.ByteArrayInputStream(fallback);
+        }
+        return () -> new FileInputStream(file);
     }
 
     @Override
@@ -103,91 +104,19 @@ public class AzureDynamicPackResources implements PackResources {
             return;
         }
 
-        for (AzureResourceManager.ResourceRoot root : AzureResourceManager.getRoots()) {
-            if (!root.directory.exists() || !root.directory.isDirectory()) continue;
-
-            if (path.equals("geo") || path.equals("models")) {
-                listModels(root, namespace, output);
-            } else if (path.equals("animations")) {
-                listAnimations(root, namespace, output);
-            } else if (path.equals("textures")) {
-                listTextures(root, namespace, output);
-            } else if (path.equals("sounds")) {
-                listSounds(root, namespace, output);
+        String prefix = path.endsWith("/") ? path : path + "/";
+        for (Map.Entry<ResourceLocation, File> entry : AzureResourceManager.getResourceIndex().entrySet()) {
+            ResourceLocation loc = entry.getKey();
+            if (!loc.getNamespace().equalsIgnoreCase(namespace)) {
+                continue;
+            }
+            if (loc.getPath().startsWith(prefix)) {
+                File file = entry.getValue();
+                if (file != null && file.exists()) {
+                    output.accept(loc, createIoSupplier(loc, file));
+                }
             }
         }
-    }
-
-    private void listModels(AzureResourceManager.ResourceRoot root, String namespace, ResourceOutput output) {
-        if (root.category == AzureResourceManager.ResourceCategory.UNPACKED_BUNDLE) {
-            File[] folders = root.directory.listFiles();
-            if (folders == null) return;
-            for (File folder : folders) {
-                if (folder.isDirectory()) {
-                    File geoFile = findFileEndingWith(folder, ".geo.json");
-                    if (geoFile != null) {
-                        acceptResource(output, namespace, "geo/" + AzureResourceManager.sanitizePath(folder.getName()) + ".geo.json", geoFile);
-                    }
-                }
-            }
-        } else if (root.category == AzureResourceManager.ResourceCategory.MODEL) {
-            scanFilesRecursive(root.directory, file -> {
-                String nameLower = file.getName().toLowerCase(Locale.ROOT);
-                if (nameLower.endsWith(".geo.json")) {
-                    acceptResource(output, namespace, "geo/" + file.getName(), file);
-                } else if (nameLower.endsWith(".json")) {
-                    acceptResource(output, namespace, "models/" + file.getName(), file);
-                }
-            });
-        }
-    }
-
-    private void listAnimations(AzureResourceManager.ResourceRoot root, String namespace, ResourceOutput output) {
-        if (root.category == AzureResourceManager.ResourceCategory.UNPACKED_BUNDLE) {
-            File[] folders = root.directory.listFiles();
-            if (folders == null) return;
-            for (File folder : folders) {
-                if (folder.isDirectory()) {
-                    File animFile = findFileEndingWith(folder, ".animation.json");
-                    if (animFile != null) {
-                        acceptResource(output, namespace, "animations/" + AzureResourceManager.sanitizePath(folder.getName()) + ".animation.json", animFile);
-                    }
-                }
-            }
-        } else if (root.category == AzureResourceManager.ResourceCategory.ANIMATION) {
-            scanFilesRecursive(root.directory, file -> {
-                if (file.getName().toLowerCase(Locale.ROOT).endsWith(".animation.json")) {
-                    acceptResource(output, namespace, "animations/" + file.getName(), file);
-                }
-            });
-        }
-    }
-
-    private void listTextures(AzureResourceManager.ResourceRoot root, String namespace, ResourceOutput output) {
-        scanFilesRecursive(root.directory, file -> {
-            if (file.getName().toLowerCase(Locale.ROOT).endsWith(".png")) {
-                String rel = getRelativePath(root.directory, file);
-                acceptResource(output, namespace, "textures/" + AzureResourceManager.sanitizePath(rel), file);
-            }
-        });
-    }
-
-    private void listSounds(AzureResourceManager.ResourceRoot root, String namespace, ResourceOutput output) {
-        scanFilesRecursive(root.directory, file -> {
-            if (file.getName().toLowerCase(Locale.ROOT).endsWith(".ogg")) {
-                String rel = getRelativePath(root.directory, file);
-                acceptResource(output, namespace, "sounds/" + AzureResourceManager.sanitizePath(rel), file);
-            }
-        });
-    }
-
-    private void acceptResource(ResourceOutput output, String namespace, String path, File file) {
-        try {
-            ResourceLocation loc = ResourceLocation.tryBuild(namespace, path.toLowerCase(Locale.ROOT));
-            if (loc != null) {
-                output.accept(loc, IoSupplier.create(file.toPath()));
-            }
-        } catch (Exception ignored) {}
     }
 
     private String generateSoundsJson(String targetNamespace) {
@@ -247,8 +176,9 @@ public class AzureDynamicPackResources implements PackResources {
     public Set<String> getNamespaces(PackType type) {
         if (type == PackType.CLIENT_RESOURCES) {
             Set<String> namespaces = new HashSet<>(SUPPORTED_NAMESPACES);
+            namespaces.addAll(AzureResourceManager.getIndexedNamespaces());
             for (AzureResourceManager.ResourceRoot r : AzureResourceManager.getRoots()) {
-                namespaces.add(r.namespace);
+                namespaces.add(r.namespace.toLowerCase(Locale.ROOT));
             }
             return Collections.unmodifiableSet(namespaces);
         }
@@ -278,47 +208,13 @@ public class AzureDynamicPackResources implements PackResources {
     }
 
     private boolean isSupportedNamespace(String namespace) {
-        if (SUPPORTED_NAMESPACES.contains(namespace)) return true;
+        if (namespace == null) return false;
+        String lower = namespace.toLowerCase(Locale.ROOT);
+        if (SUPPORTED_NAMESPACES.contains(lower)) return true;
+        if (AzureResourceManager.getIndexedNamespaces().contains(lower)) return true;
         for (AzureResourceManager.ResourceRoot r : AzureResourceManager.getRoots()) {
-            if (r.namespace.equalsIgnoreCase(namespace)) return true;
+            if (r.namespace.equalsIgnoreCase(lower)) return true;
         }
         return false;
-    }
-
-    private static String getRelativePath(File base, File file) {
-        try {
-            return base.toPath().relativize(file.toPath()).toString().replace('\\', '/');
-        } catch (Exception e) {
-            return file.getName();
-        }
-    }
-
-    private static File findFileEndingWith(File dir, String suffix) {
-        File[] files = dir.listFiles();
-        if (files == null) return null;
-        for (File f : files) {
-            if (f.isFile() && f.getName().toLowerCase(Locale.ROOT).endsWith(suffix)) {
-                return f;
-            }
-        }
-        for (File f : files) {
-            if (f.isDirectory()) {
-                File found = findFileEndingWith(f, suffix);
-                if (found != null) return found;
-            }
-        }
-        return null;
-    }
-
-    private static void scanFilesRecursive(File dir, java.util.function.Consumer<File> consumer) {
-        File[] files = dir.listFiles();
-        if (files == null) return;
-        for (File f : files) {
-            if (f.isDirectory()) {
-                scanFilesRecursive(f, consumer);
-            } else if (f.isFile()) {
-                consumer.accept(f);
-            }
-        }
     }
 }

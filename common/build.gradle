@@ -3,7 +3,12 @@ architectury {
 }
 
 repositories {
+    mavenCentral()
     maven { url 'https://dl.cloudsmith.io/public/geckolib3/geckolib/maven/' }
+}
+
+configurations {
+    embedLib
 }
 
 dependencies {
@@ -14,6 +19,15 @@ dependencies {
 
     // Architectury API. This is optional, and you can comment it out if you don't need it.
     modImplementation "dev.architectury:architectury:$rootProject.architectury_api_version"
+
+    embedLib "org.xerial:sqlite-jdbc:3.43.0.0"
+    compileOnly "org.xerial:sqlite-jdbc:3.43.0.0"
+}
+
+processResources {
+    from(configurations.embedLib) {
+        into "azureframelib/lib"
+    }
 }
 
 task devJar(type: Jar) {
