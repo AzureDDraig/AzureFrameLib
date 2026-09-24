@@ -37,18 +37,40 @@ public class SQLiteHelper {
     public static synchronized void ensureDriverLoaded(Path libFolder) {
         if (driverLoaded && sqliteDriver != null) return;
 
+        // 1. Check if DriverManager already has an active SQLite driver (e.g. registered by another mod)
         try {
-            Class<?> jdbcClass;
-            try {
-                jdbcClass = Class.forName("org.sqlite.JDBC");
-            } catch (ClassNotFoundException e) {
-                jdbcClass = Class.forName("com.rpgwarehouse.storage.sqlite.JDBC");
+            Driver existing = DriverManager.getDriver("jdbc:sqlite::memory:");
+            if (existing != null) {
+                sqliteDriver = existing;
+                driverLoaded = true;
+                AzureFrameLib.LOGGER.info("[AzureFrameLib] Reusing existing SQLite JDBC driver from DriverManager: " + existing.getClass().getName());
+                return;
             }
-            sqliteDriver = (Driver) jdbcClass.getDeclaredConstructor().newInstance();
-            registerDriverShim(sqliteDriver);
-            driverLoaded = true;
-            AzureFrameLib.LOGGER.info("[AzureFrameLib] SQLite JDBC driver found on classpath.");
-            return;
+        } catch (Throwable ignored) {
+            // No driver currently registered in DriverManager
+        }
+
+        // 2. Check if SQLite driver class is already present on the classpath
+        try {
+            Class<?> jdbcClass = null;
+            String[] candidateClasses = new String[]{
+                "org.sqlite.JDBC",
+                "com.rpgwarehouse.storage.sqlite.JDBC"
+            };
+            for (String candidate : candidateClasses) {
+                try {
+                    jdbcClass = Class.forName(candidate);
+                    if (jdbcClass != null) break;
+                } catch (ClassNotFoundException ignored) {}
+            }
+
+            if (jdbcClass != null) {
+                sqliteDriver = (Driver) jdbcClass.getDeclaredConstructor().newInstance();
+                registerDriverShim(sqliteDriver);
+                driverLoaded = true;
+                AzureFrameLib.LOGGER.info("[AzureFrameLib] SQLite JDBC driver found on classpath: " + jdbcClass.getName());
+                return;
+            }
         } catch (Exception ex) {
             // Not on standard classpath, load dynamically below
         }
@@ -119,18 +141,13 @@ public class SQLiteHelper {
     }
 
     /**
-     * Opens an SQLite connection to the target database file and applies performance optimizations.
+     * Opens an SQLite connection using a raw JDBC URL and applies performance optimizations.
      */
-    public static Connection openConnection(File dbFile) throws SQLException {
+    public static Connection openConnection(String url) throws SQLException {
         if (!driverLoaded || sqliteDriver == null) {
-            ensureDriverLoaded(dbFile != null && dbFile.getParentFile() != null ? dbFile.getParentFile().toPath() : null);
+            ensureDriverLoaded(null);
         }
 
-        if (dbFile.getParentFile() != null && !dbFile.getParentFile().exists()) {
-            dbFile.getParentFile().mkdirs();
-        }
-
-        String url = "jdbc:sqlite:" + dbFile.getAbsolutePath();
         Connection conn = null;
         if (sqliteDriver != null) {
             try {
@@ -143,6 +160,20 @@ public class SQLiteHelper {
 
         applyOptimizedPragmas(conn);
         return conn;
+    }
+
+    /**
+     * Opens an SQLite connection to the target database file and applies performance optimizations.
+     */
+    public static Connection openConnection(File dbFile) throws SQLException {
+        if (dbFile != null && dbFile.getParentFile() != null && !dbFile.getParentFile().exists()) {
+            dbFile.getParentFile().mkdirs();
+        }
+        if (!driverLoaded || sqliteDriver == null) {
+            ensureDriverLoaded(dbFile != null && dbFile.getParentFile() != null ? dbFile.getParentFile().toPath() : null);
+        }
+        String url = "jdbc:sqlite:" + (dbFile != null ? dbFile.getAbsolutePath() : "");
+        return openConnection(url);
     }
 
     /**
