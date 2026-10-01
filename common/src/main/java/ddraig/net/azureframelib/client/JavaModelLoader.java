@@ -71,7 +71,10 @@ public class JavaModelLoader {
             return;
         }
 
-        File file = AzureResourceManager.findModelFile(modelId);
+        File file = AzureResourceManager.findJavaModelFile(modelId);
+        if (file == null) {
+            file = AzureResourceManager.findModelFile(modelId);
+        }
         if (file == null || !file.exists()) {
             FAILED_MODELS.add(modelId);
             return;

@@ -1,13 +1,17 @@
 package ddraig.net.azureframelib.resource;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import dev.architectury.platform.Platform;
 import ddraig.net.azureframelib.AzureFrameLib;
 import net.minecraft.resources.ResourceLocation;
 
 import java.io.File;
 import java.io.FileReader;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -21,6 +25,11 @@ import java.util.concurrent.CopyOnWriteArrayList;
 public class AzureResourceManager {
     private static final Gson GSON = new Gson();
     private static final AzureResourceManager INSTANCE = new AzureResourceManager();
+
+    private static final Set<String> IGNORED_CONFIG_JSONS = Set.of(
+            "mount.json", "mob.json", "projectile.json", "entity.json", "config.json",
+            "data.json", "metadata.json", "sounds.json", "pack.mcmeta"
+    );
 
     public enum ResourceCategory {
         MODEL,
@@ -170,6 +179,110 @@ public class AzureResourceManager {
         } catch (Exception ignored) {}
     }
 
+    public static boolean isValidGeoModelFile(File file) {
+        if (file == null || !file.exists() || !file.isFile() || file.length() < 10) return false;
+        String name = file.getName().toLowerCase(Locale.ROOT);
+        if (name.endsWith(".animation.json") || name.endsWith(".java")) return false;
+        if (IGNORED_CONFIG_JSONS.contains(name)) return false;
+        if (!name.endsWith(".geo.json") && !name.endsWith(".json")) return false;
+
+        try {
+            String content = Files.readString(file.toPath());
+            if (!content.contains("minecraft:geometry")) return false;
+
+            JsonElement elem = JsonParser.parseString(content);
+            if (elem.isJsonObject()) {
+                JsonObject obj = elem.getAsJsonObject();
+                if (obj.has("minecraft:geometry")) {
+                    JsonElement geo = obj.get("minecraft:geometry");
+                    return geo.isJsonArray() && geo.getAsJsonArray().size() > 0;
+                }
+            }
+        } catch (Throwable ignored) {}
+        return false;
+    }
+
+    public static boolean isValidAnimationFile(File file) {
+        if (file == null || !file.exists() || !file.isFile() || file.length() < 10) return false;
+        String name = file.getName().toLowerCase(Locale.ROOT);
+        if (IGNORED_CONFIG_JSONS.contains(name)) return false;
+        if (!name.endsWith(".animation.json") && !name.endsWith(".json")) return false;
+
+        try {
+            String content = Files.readString(file.toPath());
+            if (!content.contains("animations")) return false;
+
+            JsonElement elem = JsonParser.parseString(content);
+            if (elem.isJsonObject()) {
+                JsonObject obj = elem.getAsJsonObject();
+                return obj.has("animations");
+            }
+        } catch (Throwable ignored) {}
+        return false;
+    }
+
+    public static byte[] getEmptyGeoModelFallbackBytes(ResourceLocation location) {
+        String id = location != null ? sanitizePath(stripExtension(location.getPath().replace("geo/", "").replace("models/", ""))) : "empty";
+        String json = "{\n" +
+                "  \"format_version\": \"1.12.0\",\n" +
+                "  \"minecraft:geometry\": [\n" +
+                "    {\n" +
+                "      \"description\": {\n" +
+                "        \"identifier\": \"geometry." + id + "\",\n" +
+                "        \"texture_width\": 1,\n" +
+                "        \"texture_height\": 1,\n" +
+                "        \"visible_bounds_width\": 1,\n" +
+                "        \"visible_bounds_height\": 1,\n" +
+                "        \"visible_bounds_offset\": [0, 0, 0]\n" +
+                "      },\n" +
+                "      \"bones\": [\n" +
+                "        {\n" +
+                "          \"name\": \"root\",\n" +
+                "          \"pivot\": [0, 0, 0]\n" +
+                "        }\n" +
+                "      ]\n" +
+                "    }\n" +
+                "  ]\n" +
+                "}";
+        return json.getBytes(StandardCharsets.UTF_8);
+    }
+
+    private static File findGeoModelInBundle(File folder) {
+        File geoFile = findFileWithExtensions(folder, ".geo.json");
+        if (geoFile != null && isValidGeoModelFile(geoFile)) {
+            return geoFile;
+        }
+        File[] files = folder.listFiles();
+        if (files != null) {
+            for (File f : files) {
+                if (f.isFile() && f.getName().toLowerCase(Locale.ROOT).endsWith(".json")) {
+                    if (isValidGeoModelFile(f)) {
+                        return f;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private static File findAnimationInBundle(File folder) {
+        File animFile = findFileWithExtensions(folder, ".animation.json");
+        if (animFile != null && isValidAnimationFile(animFile)) {
+            return animFile;
+        }
+        File[] files = folder.listFiles();
+        if (files != null) {
+            for (File f : files) {
+                if (f.isFile() && f.getName().toLowerCase(Locale.ROOT).endsWith(".json")) {
+                    if (isValidAnimationFile(f)) {
+                        return f;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
     private static void scanBundleDirectory(ResourceRoot root) {
         File[] folders = root.directory.listFiles();
         if (folders == null) return;
@@ -178,12 +291,12 @@ public class AzureResourceManager {
             String rawId = folder.getName();
             String cleanId = sanitizePath(rawId);
 
-            CACHED_MODELS.add(cleanId);
-            CACHED_MODELS.add(root.namespace + ":" + cleanId);
-
-            // 1. Models (.geo.json, .json, .java)
-            File geoFile = findFileWithExtensions(folder, ".geo.json", ".json", ".java");
+            // 1. GeckoLib Models
+            File geoFile = findGeoModelInBundle(folder);
             if (geoFile != null) {
+                CACHED_MODELS.add(cleanId);
+                CACHED_MODELS.add(root.namespace + ":" + cleanId);
+
                 String rawName = stripExtension(geoFile.getName());
                 String cleanName = sanitizePath(rawName);
 
@@ -198,10 +311,18 @@ public class AzureResourceManager {
                     indexResource(root.namespace, "models/" + cleanName + ".geo.json", geoFile);
                     indexResource(root.namespace, "models/" + cleanName + ".json", geoFile);
                 }
+            } else {
+                // Check if it's a Java model (.java)
+                File javaFile = findFileWithExtensions(folder, ".java");
+                if (javaFile != null) {
+                    CACHED_MODELS.add(cleanId);
+                    CACHED_MODELS.add(root.namespace + ":" + cleanId);
+                    indexResource(root.namespace, "models/" + cleanId + ".java", javaFile);
+                }
             }
 
             // 2. Animations (.animation.json)
-            File animFile = findFileWithExtensions(folder, ".animation.json");
+            File animFile = findAnimationInBundle(folder);
             if (animFile != null) {
                 CACHED_ANIMATIONS.add(cleanId);
                 CACHED_ANIMATIONS.add(root.namespace + ":" + cleanId);
@@ -256,7 +377,23 @@ public class AzureResourceManager {
         scanFilesRecursive(root.directory, file -> {
             String name = file.getName();
             String lower = name.toLowerCase(Locale.ROOT);
-            if (lower.endsWith(".geo.json") || lower.endsWith(".json") || lower.endsWith(".java")) {
+            if (lower.endsWith(".geo.json") || lower.endsWith(".json")) {
+                if (isValidGeoModelFile(file)) {
+                    String baseName = stripExtension(name);
+                    String cleanBase = sanitizePath(baseName);
+                    CACHED_MODELS.add(cleanBase);
+                    CACHED_MODELS.add(root.namespace + ":" + cleanBase);
+
+                    String rel = getRelativePath(root.directory, file);
+                    String cleanRel = sanitizePath(rel);
+
+                    indexResource(root.namespace, "geo/" + cleanRel, file);
+                    indexResource(root.namespace, "models/" + cleanRel, file);
+                    if (cleanRel.endsWith(".geo.json")) {
+                        indexResource(root.namespace, "geo/" + cleanRel.substring(0, cleanRel.length() - 9) + ".json", file);
+                    }
+                }
+            } else if (lower.endsWith(".java")) {
                 String baseName = stripExtension(name);
                 String cleanBase = sanitizePath(baseName);
                 CACHED_MODELS.add(cleanBase);
@@ -264,12 +401,7 @@ public class AzureResourceManager {
 
                 String rel = getRelativePath(root.directory, file);
                 String cleanRel = sanitizePath(rel);
-
-                indexResource(root.namespace, "geo/" + cleanRel, file);
                 indexResource(root.namespace, "models/" + cleanRel, file);
-                if (cleanRel.endsWith(".geo.json")) {
-                    indexResource(root.namespace, "geo/" + cleanRel.substring(0, cleanRel.length() - 9) + ".json", file);
-                }
             }
         });
     }
@@ -291,14 +423,16 @@ public class AzureResourceManager {
         scanFilesRecursive(root.directory, file -> {
             String lower = file.getName().toLowerCase(Locale.ROOT);
             if (lower.endsWith(".animation.json") || lower.endsWith(".json")) {
-                String rel = getRelativePath(root.directory, file);
-                String cleanRel = sanitizePath(rel);
-                CACHED_ANIMATIONS.add(cleanRel);
-                CACHED_ANIMATIONS.add(root.namespace + ":" + cleanRel);
+                if (isValidAnimationFile(file)) {
+                    String rel = getRelativePath(root.directory, file);
+                    String cleanRel = sanitizePath(rel);
+                    CACHED_ANIMATIONS.add(cleanRel);
+                    CACHED_ANIMATIONS.add(root.namespace + ":" + cleanRel);
 
-                indexResource(root.namespace, "animations/" + cleanRel, file);
-                if (cleanRel.endsWith(".animation.json")) {
-                    indexResource(root.namespace, "animations/" + cleanRel.substring(0, cleanRel.length() - 15) + ".json", file);
+                    indexResource(root.namespace, "animations/" + cleanRel, file);
+                    if (cleanRel.endsWith(".animation.json")) {
+                        indexResource(root.namespace, "animations/" + cleanRel.substring(0, cleanRel.length() - 15) + ".json", file);
+                    }
                 }
             }
         });
@@ -349,15 +483,43 @@ public class AzureResourceManager {
             if (root.category == ResourceCategory.UNPACKED_BUNDLE) {
                 File unpackedDir = findCaseInsensitiveFile(root.directory, key);
                 if (unpackedDir != null && unpackedDir.isDirectory()) {
-                    File geoFile = findFileWithExtensions(unpackedDir, ".geo.json", ".json", ".java");
+                    File geoFile = findGeoModelInBundle(unpackedDir);
                     if (geoFile != null) return geoFile;
+                    File javaFile = findFileWithExtensions(unpackedDir, ".java");
+                    if (javaFile != null) return javaFile;
                 }
             } else if (root.category == ResourceCategory.MODEL) {
                 File file = findCaseInsensitiveFile(root.directory, key);
-                if (file != null && file.isFile()) return file;
+                if (file != null && file.isFile() && (isValidGeoModelFile(file) || file.getName().toLowerCase(Locale.ROOT).endsWith(".java"))) {
+                    return file;
+                }
 
-                File geoFile = findFileWithExtensions(root.directory, key + ".geo.json", key + ".json");
-                if (geoFile != null) return geoFile;
+                File geoFile = findFileWithExtensions(root.directory, key + ".geo.json");
+                if (geoFile != null && isValidGeoModelFile(geoFile)) return geoFile;
+
+                File jsonFile = findFileWithExtensions(root.directory, key + ".json");
+                if (jsonFile != null && isValidGeoModelFile(jsonFile)) return jsonFile;
+
+                File javaFile = findFileWithExtensions(root.directory, key + ".java");
+                if (javaFile != null) return javaFile;
+            }
+        }
+        return null;
+    }
+
+    public static File findJavaModelFile(String rawInput) {
+        if (rawInput == null || rawInput.trim().isEmpty()) return null;
+        String key = cleanKey(rawInput);
+        for (ResourceRoot root : RESOURCE_ROOTS) {
+            if (root.category == ResourceCategory.UNPACKED_BUNDLE) {
+                File unpackedDir = findCaseInsensitiveFile(root.directory, key);
+                if (unpackedDir != null && unpackedDir.isDirectory()) {
+                    File javaFile = findFileWithExtensions(unpackedDir, ".java");
+                    if (javaFile != null) return javaFile;
+                }
+            } else if (root.category == ResourceCategory.MODEL) {
+                File javaFile = findFileWithExtensions(root.directory, key + ".java");
+                if (javaFile != null) return javaFile;
             }
         }
         return null;
@@ -383,15 +545,18 @@ public class AzureResourceManager {
             if (root.category == ResourceCategory.UNPACKED_BUNDLE) {
                 File unpackedDir = findCaseInsensitiveFile(root.directory, key);
                 if (unpackedDir != null && unpackedDir.isDirectory()) {
-                    File animFile = findFileWithExtensions(unpackedDir, ".animation.json", ".json");
+                    File animFile = findAnimationInBundle(unpackedDir);
                     if (animFile != null) return animFile;
                 }
             } else if (root.category == ResourceCategory.ANIMATION) {
                 File file = findCaseInsensitiveFile(root.directory, key);
-                if (file != null && file.isFile()) return file;
+                if (file != null && file.isFile() && isValidAnimationFile(file)) return file;
 
-                File animFile = findFileWithExtensions(root.directory, key + ".animation.json", key + ".json");
-                if (animFile != null) return animFile;
+                File animFile = findFileWithExtensions(root.directory, key + ".animation.json");
+                if (animFile != null && isValidAnimationFile(animFile)) return animFile;
+
+                File jsonFile = findFileWithExtensions(root.directory, key + ".json");
+                if (jsonFile != null && isValidAnimationFile(jsonFile)) return jsonFile;
             }
         }
         return null;

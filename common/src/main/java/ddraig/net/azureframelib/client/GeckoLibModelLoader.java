@@ -161,6 +161,16 @@ public class GeckoLibModelLoader {
             // Validate JSON
             JsonElement parsed = JsonParser.parseString(jsonContent);
             if (!parsed.isJsonObject()) return null;
+            JsonObject root = parsed.getAsJsonObject();
+            if (!root.has("minecraft:geometry")) {
+                AzureFrameLib.LOGGER.warn("[AzureFrameLib] Model JSON for {} is missing 'minecraft:geometry'", location);
+                return null;
+            }
+            JsonElement geoElem = root.get("minecraft:geometry");
+            if (!geoElem.isJsonArray() || geoElem.getAsJsonArray().size() == 0) {
+                AzureFrameLib.LOGGER.warn("[AzureFrameLib] Model JSON for {} has empty 'minecraft:geometry' array", location);
+                return null;
+            }
 
             Class<?> jsonUtilClass = Class.forName("software.bernie.geckolib.util.JsonUtil");
             Field geoGsonField = jsonUtilClass.getField("GEO_GSON");

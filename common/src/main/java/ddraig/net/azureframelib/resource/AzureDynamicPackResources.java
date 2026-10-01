@@ -1,6 +1,7 @@
 package ddraig.net.azureframelib.resource;
 
 import com.google.gson.GsonBuilder;
+import ddraig.net.azureframelib.AzureFrameLib;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.PackResources;
@@ -91,9 +92,18 @@ public class AzureDynamicPackResources implements PackResources {
     }
 
     private IoSupplier<InputStream> createIoSupplier(ResourceLocation location, File file) {
-        if (location.getPath().startsWith("animations/") && file.length() == 0) {
-            byte[] fallback = "{\"format_version\":\"1.8.0\",\"animations\":{}}".getBytes(StandardCharsets.UTF_8);
-            return () -> new java.io.ByteArrayInputStream(fallback);
+        String path = location.getPath();
+        if (path.startsWith("animations/")) {
+            if (file.length() == 0 || !AzureResourceManager.isValidAnimationFile(file)) {
+                byte[] fallback = "{\"format_version\":\"1.8.0\",\"animations\":{}}".getBytes(StandardCharsets.UTF_8);
+                return () -> new java.io.ByteArrayInputStream(fallback);
+            }
+        } else if (path.startsWith("geo/") || path.startsWith("models/")) {
+            if (file.length() == 0 || !AzureResourceManager.isValidGeoModelFile(file)) {
+                AzureFrameLib.LOGGER.warn("[AzureFrameLib] Model file {} ({}) is missing valid GeckoLib geometry. Serving safe empty model fallback.", location, file.getAbsolutePath());
+                byte[] fallback = AzureResourceManager.getEmptyGeoModelFallbackBytes(location);
+                return () -> new java.io.ByteArrayInputStream(fallback);
+            }
         }
         return () -> new FileInputStream(file);
     }
