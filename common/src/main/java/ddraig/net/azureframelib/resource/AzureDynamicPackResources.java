@@ -62,28 +62,46 @@ public class AzureDynamicPackResources implements PackResources {
         // 2. High-speed exact index lookup
         File indexed = AzureResourceManager.getResourceIndex().get(location);
         if (indexed != null && indexed.exists()) {
-            return createIoSupplier(location, indexed);
+            if (path.startsWith("geo/") || path.startsWith("models/")) {
+                if (AzureResourceManager.isValidGeoModelFile(indexed)) {
+                    return createIoSupplier(location, indexed);
+                }
+            } else if (path.startsWith("animations/")) {
+                if (AzureResourceManager.isValidAnimationFile(indexed)) {
+                    return createIoSupplier(location, indexed);
+                }
+            } else if (path.startsWith("textures/")) {
+                if (indexed.getName().toLowerCase(java.util.Locale.ROOT).endsWith(".png")) {
+                    return createIoSupplier(location, indexed);
+                }
+            } else if (path.startsWith("sounds/")) {
+                if (indexed.getName().toLowerCase(java.util.Locale.ROOT).endsWith(".ogg")) {
+                    return createIoSupplier(location, indexed);
+                }
+            } else {
+                return createIoSupplier(location, indexed);
+            }
         }
 
         // 3. Fallback category search
         if (path.startsWith("geo/") || path.startsWith("models/")) {
             File file = AzureResourceManager.findModelFile(path);
-            if (file != null && file.exists()) {
+            if (file != null && file.exists() && AzureResourceManager.isValidGeoModelFile(file)) {
                 return createIoSupplier(location, file);
             }
         } else if (path.startsWith("animations/")) {
             File file = AzureResourceManager.findAnimationFile(path);
-            if (file != null && file.exists()) {
+            if (file != null && file.exists() && AzureResourceManager.isValidAnimationFile(file)) {
                 return createIoSupplier(location, file);
             }
         } else if (path.startsWith("textures/")) {
             File file = AzureResourceManager.findTextureFile(path);
-            if (file != null && file.exists()) {
+            if (file != null && file.exists() && file.getName().toLowerCase(java.util.Locale.ROOT).endsWith(".png")) {
                 return createIoSupplier(location, file);
             }
         } else if (path.startsWith("sounds/")) {
             File file = AzureResourceManager.findSoundFile(path);
-            if (file != null && file.exists()) {
+            if (file != null && file.exists() && file.getName().toLowerCase(java.util.Locale.ROOT).endsWith(".ogg")) {
                 return createIoSupplier(location, file);
             }
         }
