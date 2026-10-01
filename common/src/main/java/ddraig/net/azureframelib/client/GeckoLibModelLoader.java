@@ -11,8 +11,7 @@ import java.io.File;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
-import java.util.Locale;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
@@ -95,6 +94,16 @@ public class GeckoLibModelLoader {
         }
 
         File file = AzureResourceManager.findModelFile(modelId);
+        if (file == null) {
+            file = AzureResourceManager.findModelFile(location.toString());
+        }
+        if (file == null) {
+            file = AzureResourceManager.findModelFile(path);
+        }
+        if (file == null && path.contains("/")) {
+            file = AzureResourceManager.findModelFile(path.substring(path.lastIndexOf('/') + 1));
+        }
+
         if (file != null && file.exists() && file.isFile()) {
             Object baked = bakeModelFromFile(location, file);
             if (baked != null) {
@@ -132,6 +141,16 @@ public class GeckoLibModelLoader {
         }
 
         File file = AzureResourceManager.findAnimationFile(animId);
+        if (file == null) {
+            file = AzureResourceManager.findAnimationFile(location.toString());
+        }
+        if (file == null) {
+            file = AzureResourceManager.findAnimationFile(path);
+        }
+        if (file == null && path.contains("/")) {
+            file = AzureResourceManager.findAnimationFile(path.substring(path.lastIndexOf('/') + 1));
+        }
+
         if (file != null && file.exists() && file.isFile()) {
             Object baked = bakeAnimationsFromFile(location, file);
             if (baked != null) {
@@ -162,13 +181,17 @@ public class GeckoLibModelLoader {
             JsonElement parsed = JsonParser.parseString(jsonContent);
             if (!parsed.isJsonObject()) return null;
             JsonObject root = parsed.getAsJsonObject();
-            if (!root.has("minecraft:geometry")) {
-                AzureFrameLib.LOGGER.warn("[AzureFrameLib] Model JSON for {} is missing 'minecraft:geometry'", location);
-                return null;
+            boolean hasGeo = root.has("minecraft:geometry");
+            if (!hasGeo) {
+                for (String k : root.keySet()) {
+                    if (k.startsWith("geometry.")) {
+                        hasGeo = true;
+                        break;
+                    }
+                }
             }
-            JsonElement geoElem = root.get("minecraft:geometry");
-            if (!geoElem.isJsonArray() || geoElem.getAsJsonArray().size() == 0) {
-                AzureFrameLib.LOGGER.warn("[AzureFrameLib] Model JSON for {} has empty 'minecraft:geometry' array", location);
+            if (!hasGeo && !root.has("format_version") && !root.has("bones")) {
+                AzureFrameLib.LOGGER.warn("[AzureFrameLib] Model JSON for {} does not appear to contain geometry definition", location);
                 return null;
             }
 
@@ -266,23 +289,88 @@ public class GeckoLibModelLoader {
     public static void injectModel(ResourceLocation location, Object bakedModel) {
         if (location == null || bakedModel == null) return;
         Map<ResourceLocation, Object> map = ensureModifiableModelMap();
-        if (map != null) {
-            try {
-                map.put(location, bakedModel);
-            } catch (Throwable ignored) {}
+
+        Set<ResourceLocation> targets = new HashSet<>();
+        targets.add(location);
+
+        String ns = location.getNamespace();
+        String path = location.getPath();
+
+        if (path.startsWith("models/")) {
+            targets.add(new ResourceLocation(ns, "geo/" + path.substring(7)));
+            targets.add(new ResourceLocation(ns, path.substring(7)));
+        } else if (path.startsWith("geo/")) {
+            targets.add(new ResourceLocation(ns, "models/" + path.substring(4)));
+            targets.add(new ResourceLocation(ns, path.substring(4)));
+        } else {
+            targets.add(new ResourceLocation(ns, "geo/" + path));
+            targets.add(new ResourceLocation(ns, "models/" + path));
         }
-        FALLBACK_MODELS.put(location, bakedModel);
+
+        if (path.contains("/")) {
+            String base = path.substring(path.lastIndexOf('/') + 1);
+            targets.add(new ResourceLocation(ns, base));
+            targets.add(new ResourceLocation(ns, "geo/" + base));
+            targets.add(new ResourceLocation(ns, "models/" + base));
+        }
+
+        // Also register under azureframelib
+        Set<ResourceLocation> commonTargets = new HashSet<>();
+        for (ResourceLocation loc : targets) {
+            if (!loc.getNamespace().equalsIgnoreCase("azureframelib")) {
+                commonTargets.add(new ResourceLocation("azureframelib", loc.getPath()));
+            }
+        }
+        targets.addAll(commonTargets);
+
+        for (ResourceLocation loc : targets) {
+            if (map != null) {
+                try {
+                    map.put(loc, bakedModel);
+                } catch (Throwable ignored) {}
+            }
+            FALLBACK_MODELS.put(loc, bakedModel);
+        }
     }
 
     public static void injectAnimations(ResourceLocation location, Object bakedAnimations) {
         if (location == null || bakedAnimations == null) return;
         Map<ResourceLocation, Object> map = ensureModifiableAnimationMap();
-        if (map != null) {
-            try {
-                map.put(location, bakedAnimations);
-            } catch (Throwable ignored) {}
+
+        Set<ResourceLocation> targets = new HashSet<>();
+        targets.add(location);
+
+        String ns = location.getNamespace();
+        String path = location.getPath();
+
+        if (path.startsWith("animations/")) {
+            targets.add(new ResourceLocation(ns, path.substring(11)));
+        } else {
+            targets.add(new ResourceLocation(ns, "animations/" + path));
         }
-        FALLBACK_ANIMATIONS.put(location, bakedAnimations);
+
+        if (path.contains("/")) {
+            String base = path.substring(path.lastIndexOf('/') + 1);
+            targets.add(new ResourceLocation(ns, base));
+            targets.add(new ResourceLocation(ns, "animations/" + base));
+        }
+
+        Set<ResourceLocation> commonTargets = new HashSet<>();
+        for (ResourceLocation loc : targets) {
+            if (!loc.getNamespace().equalsIgnoreCase("azureframelib")) {
+                commonTargets.add(new ResourceLocation("azureframelib", loc.getPath()));
+            }
+        }
+        targets.addAll(commonTargets);
+
+        for (ResourceLocation loc : targets) {
+            if (map != null) {
+                try {
+                    map.put(loc, bakedAnimations);
+                } catch (Throwable ignored) {}
+            }
+            FALLBACK_ANIMATIONS.put(loc, bakedAnimations);
+        }
     }
 
     public static boolean isModelBaked(ResourceLocation location) {

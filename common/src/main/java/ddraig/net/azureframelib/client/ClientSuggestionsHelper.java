@@ -19,6 +19,9 @@ public class ClientSuggestionsHelper {
     private static final List<String> CACHED_PARTICLES = new CopyOnWriteArrayList<>();
     private static final List<String> CACHED_ITEMS = new CopyOnWriteArrayList<>();
     private static final List<String> CACHED_ENTITIES = new CopyOnWriteArrayList<>();
+    private static final List<String> CACHED_MODELS = new CopyOnWriteArrayList<>();
+    private static final List<String> CACHED_TEXTURES = new CopyOnWriteArrayList<>();
+    private static final List<String> CACHED_ANIMATIONS = new CopyOnWriteArrayList<>();
 
     public static void clearCache() {
         CACHED_BIOMES.clear();
@@ -27,6 +30,30 @@ public class ClientSuggestionsHelper {
         CACHED_PARTICLES.clear();
         CACHED_ITEMS.clear();
         CACHED_ENTITIES.clear();
+        CACHED_MODELS.clear();
+        CACHED_TEXTURES.clear();
+        CACHED_ANIMATIONS.clear();
+    }
+
+    public static void addClientModels(List<String> target) {
+        if (CACHED_MODELS.isEmpty()) {
+            populateModels();
+        }
+        mergeInto(target, CACHED_MODELS);
+    }
+
+    public static void addClientTextures(List<String> target) {
+        if (CACHED_TEXTURES.isEmpty()) {
+            populateTextures();
+        }
+        mergeInto(target, CACHED_TEXTURES);
+    }
+
+    public static void addClientAnimations(List<String> target) {
+        if (CACHED_ANIMATIONS.isEmpty()) {
+            populateAnimations();
+        }
+        mergeInto(target, CACHED_ANIMATIONS);
     }
 
     public static void addClientBiomes(List<String> target) {
@@ -183,6 +210,45 @@ public class ClientSuggestionsHelper {
         try {
             for (ResourceLocation loc : BuiltInRegistries.ENTITY_TYPE.keySet()) {
                 CACHED_ENTITIES.add(loc.toString());
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    private static void populateModels() {
+        CACHED_MODELS.add("customraces:models/were/default_werewolf.geo.json");
+        CACHED_MODELS.add("customraces:geo/default_werewolf.geo.json");
+        CACHED_MODELS.add("default_werewolf");
+        try {
+            for (String modelId : ddraig.net.azureframelib.resource.AzureResourceManager.getDiscoveredModels()) {
+                if (!CACHED_MODELS.contains(modelId)) {
+                    CACHED_MODELS.add(modelId);
+                }
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    private static void populateTextures() {
+        CACHED_TEXTURES.add("skin");
+        CACHED_TEXTURES.add("player");
+        CACHED_TEXTURES.add("customraces:textures/were/default_werewolf.png");
+        CACHED_TEXTURES.add("default_werewolf.png");
+        try {
+            for (String texId : ddraig.net.azureframelib.resource.AzureResourceManager.getDiscoveredTextures()) {
+                if (!CACHED_TEXTURES.contains(texId)) {
+                    CACHED_TEXTURES.add(texId);
+                }
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    private static void populateAnimations() {
+        CACHED_ANIMATIONS.add("customraces:animations/were/default_werewolf.animation.json");
+        CACHED_ANIMATIONS.add("default_werewolf.animation.json");
+        try {
+            for (String animId : ddraig.net.azureframelib.resource.AzureResourceManager.getDiscoveredAnimations()) {
+                if (!CACHED_ANIMATIONS.contains(animId)) {
+                    CACHED_ANIMATIONS.add(animId);
+                }
             }
         } catch (Throwable ignored) {}
     }

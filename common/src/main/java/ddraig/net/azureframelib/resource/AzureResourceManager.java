@@ -102,20 +102,31 @@ public class AzureResourceManager {
         registerFolder(ResourceCategory.UNPACKED_BUNDLE, "custom_mobs", new File(cmBase, "Mobs/Unpacked"));
         registerFolder(ResourceCategory.UNPACKED_BUNDLE, "custom_mobs", new File(cmBase, "Projectiles/Unpacked"));
         registerFolder(ResourceCategory.SOUND, "custom_mobs", new File(cmBase, "Sounds"));
+        registerFolder(ResourceCategory.MODEL, "custom_mobs", new File(cmBase, "Models"));
+        registerFolder(ResourceCategory.TEXTURE, "custom_mobs", new File(cmBase, "Textures"));
+        registerFolder(ResourceCategory.ANIMATION, "custom_mobs", new File(cmBase, "Animations"));
 
         // 3. RPG Mounts Folders
         File mountBase = new File(configDir, "RPG Mounts");
         registerFolder(ResourceCategory.UNPACKED_BUNDLE, "rpg_mounts", new File(mountBase, "Mounts/Unpacked"));
         registerFolder(ResourceCategory.SOUND, "rpg_mounts", new File(mountBase, "Mounts/Sounds"));
+        registerFolder(ResourceCategory.MODEL, "rpg_mounts", new File(mountBase, "Models"));
+        registerFolder(ResourceCategory.TEXTURE, "rpg_mounts", new File(mountBase, "Textures"));
+        registerFolder(ResourceCategory.ANIMATION, "rpg_mounts", new File(mountBase, "Animations"));
 
         // 4. Custom Races Folders
         File raceBase = new File(configDir, "custom_races");
         registerFolder(ResourceCategory.MODEL, "customraces", new File(raceBase, "models"));
         registerFolder(ResourceCategory.MODEL, "customraces", new File(raceBase, "geo"));
+        registerFolder(ResourceCategory.MODEL, "customraces", new File(raceBase, "models/were"));
         registerFolder(ResourceCategory.MODEL, "customraces", new File(raceBase, "models/parts"));
         registerFolder(ResourceCategory.TEXTURE, "customraces", new File(raceBase, "textures"));
+        registerFolder(ResourceCategory.TEXTURE, "customraces", new File(raceBase, "textures/were"));
+        registerFolder(ResourceCategory.TEXTURE, "customraces", new File(raceBase, "textures/parts"));
         registerFolder(ResourceCategory.ANIMATION, "customraces", new File(raceBase, "animations"));
+        registerFolder(ResourceCategory.ANIMATION, "customraces", new File(raceBase, "animations/were"));
         registerFolder(ResourceCategory.SOUND, "customraces", new File(raceBase, "sounds"));
+        registerFolder(ResourceCategory.SOUND, "customraces", new File(raceBase, "sounds/were"));
     }
 
     public static List<ResourceRoot> getRoots() {
@@ -188,15 +199,8 @@ public class AzureResourceManager {
 
         try {
             String content = Files.readString(file.toPath());
-            if (!content.contains("minecraft:geometry")) return false;
-
-            JsonElement elem = JsonParser.parseString(content);
-            if (elem.isJsonObject()) {
-                JsonObject obj = elem.getAsJsonObject();
-                if (obj.has("minecraft:geometry")) {
-                    JsonElement geo = obj.get("minecraft:geometry");
-                    return geo.isJsonArray() && geo.getAsJsonArray().size() > 0;
-                }
+            if (content.contains("minecraft:geometry") || content.contains("\"bones\"") || content.contains("geometry.")) {
+                return true;
             }
         } catch (Throwable ignored) {}
         return false;
@@ -210,12 +214,8 @@ public class AzureResourceManager {
 
         try {
             String content = Files.readString(file.toPath());
-            if (!content.contains("animations")) return false;
-
-            JsonElement elem = JsonParser.parseString(content);
-            if (elem.isJsonObject()) {
-                JsonObject obj = elem.getAsJsonObject();
-                return obj.has("animations");
+            if (content.contains("animations")) {
+                return true;
             }
         } catch (Throwable ignored) {}
         return false;
@@ -302,14 +302,26 @@ public class AzureResourceManager {
 
                 indexResource(root.namespace, "geo/" + cleanId + ".geo.json", geoFile);
                 indexResource(root.namespace, "geo/" + cleanId + ".json", geoFile);
+                indexResource(root.namespace, "geo/" + cleanId, geoFile);
                 indexResource(root.namespace, "models/" + cleanId + ".geo.json", geoFile);
                 indexResource(root.namespace, "models/" + cleanId + ".json", geoFile);
+                indexResource(root.namespace, "models/" + cleanId, geoFile);
+                indexResource(root.namespace, cleanId + ".geo.json", geoFile);
+                indexResource(root.namespace, cleanId + ".json", geoFile);
+                indexResource(root.namespace, cleanId, geoFile);
 
                 if (!cleanName.equals(cleanId)) {
                     indexResource(root.namespace, "geo/" + cleanName + ".geo.json", geoFile);
                     indexResource(root.namespace, "geo/" + cleanName + ".json", geoFile);
+                    indexResource(root.namespace, "geo/" + cleanName, geoFile);
                     indexResource(root.namespace, "models/" + cleanName + ".geo.json", geoFile);
                     indexResource(root.namespace, "models/" + cleanName + ".json", geoFile);
+                    indexResource(root.namespace, "models/" + cleanName, geoFile);
+                    indexResource(root.namespace, cleanName + ".geo.json", geoFile);
+                    indexResource(root.namespace, cleanName + ".json", geoFile);
+                    indexResource(root.namespace, cleanName, geoFile);
+                    CACHED_MODELS.add(cleanName);
+                    CACHED_MODELS.add(root.namespace + ":" + cleanName);
                 }
             } else {
                 // Check if it's a Java model (.java)
@@ -318,6 +330,8 @@ public class AzureResourceManager {
                     CACHED_MODELS.add(cleanId);
                     CACHED_MODELS.add(root.namespace + ":" + cleanId);
                     indexResource(root.namespace, "models/" + cleanId + ".java", javaFile);
+                    indexResource(root.namespace, cleanId + ".java", javaFile);
+                    indexResource(root.namespace, cleanId, javaFile);
                 }
             }
 
@@ -327,9 +341,12 @@ public class AzureResourceManager {
                 CACHED_ANIMATIONS.add(cleanId);
                 CACHED_ANIMATIONS.add(root.namespace + ":" + cleanId);
 
-                // Index valid animation files
                 indexResource(root.namespace, "animations/" + cleanId + ".animation.json", animFile);
                 indexResource(root.namespace, "animations/" + cleanId + ".json", animFile);
+                indexResource(root.namespace, "animations/" + cleanId, animFile);
+                indexResource(root.namespace, cleanId + ".animation.json", animFile);
+                indexResource(root.namespace, cleanId + ".json", animFile);
+                indexResource(root.namespace, cleanId, animFile);
 
                 String animName = animFile.getName();
                 int idx = animName.toLowerCase(Locale.ROOT).indexOf(".animation.json");
@@ -338,6 +355,12 @@ public class AzureResourceManager {
                     if (!cleanAnimName.equals(cleanId)) {
                         indexResource(root.namespace, "animations/" + cleanAnimName + ".animation.json", animFile);
                         indexResource(root.namespace, "animations/" + cleanAnimName + ".json", animFile);
+                        indexResource(root.namespace, "animations/" + cleanAnimName, animFile);
+                        indexResource(root.namespace, cleanAnimName + ".animation.json", animFile);
+                        indexResource(root.namespace, cleanAnimName + ".json", animFile);
+                        indexResource(root.namespace, cleanAnimName, animFile);
+                        CACHED_ANIMATIONS.add(cleanAnimName);
+                        CACHED_ANIMATIONS.add(root.namespace + ":" + cleanAnimName);
                     }
                 }
             }
@@ -347,15 +370,21 @@ public class AzureResourceManager {
                 if (file.getName().toLowerCase(Locale.ROOT).endsWith(".png")) {
                     String rel = getRelativePath(folder, file);
                     String cleanRel = sanitizePath(rel);
-                    String baseName = sanitizePath(file.getName());
+                    String baseName = sanitizePath(stripExtension(file.getName()));
 
                     CACHED_TEXTURES.add(cleanRel);
                     CACHED_TEXTURES.add(root.namespace + ":" + cleanRel);
+                    CACHED_TEXTURES.add(baseName);
+                    CACHED_TEXTURES.add(root.namespace + ":" + baseName);
 
                     indexResource(root.namespace, "textures/entity/" + cleanId + "/" + cleanRel, file);
                     indexResource(root.namespace, "textures/" + cleanId + "/" + cleanRel, file);
                     indexResource(root.namespace, "textures/" + cleanRel, file);
+                    indexResource(root.namespace, "textures/" + baseName + ".png", file);
                     indexResource(root.namespace, "textures/" + baseName, file);
+                    indexResource(root.namespace, cleanRel, file);
+                    indexResource(root.namespace, baseName + ".png", file);
+                    indexResource(root.namespace, baseName, file);
                 }
             });
 
@@ -364,10 +393,16 @@ public class AzureResourceManager {
                 if (file.getName().toLowerCase(Locale.ROOT).endsWith(".ogg")) {
                     String rel = getRelativePath(folder, file);
                     String cleanRel = sanitizePath(stripExtension(rel));
+                    String baseName = sanitizePath(stripExtension(file.getName()));
                     CACHED_SOUNDS.add(root.namespace + ":unpacked/" + cleanId + "/" + cleanRel);
+                    CACHED_SOUNDS.add(root.namespace + ":" + baseName);
 
                     indexResource(root.namespace, "sounds/" + cleanId + "/" + cleanRel + ".ogg", file);
                     indexResource(root.namespace, "sounds/" + cleanRel + ".ogg", file);
+                    indexResource(root.namespace, "sounds/" + baseName + ".ogg", file);
+                    indexResource(root.namespace, "sounds/" + baseName, file);
+                    indexResource(root.namespace, baseName + ".ogg", file);
+                    indexResource(root.namespace, baseName, file);
                 }
             });
         }
@@ -379,29 +414,55 @@ public class AzureResourceManager {
             String lower = name.toLowerCase(Locale.ROOT);
             if (lower.endsWith(".geo.json") || lower.endsWith(".json")) {
                 if (isValidGeoModelFile(file)) {
-                    String baseName = stripExtension(name);
-                    String cleanBase = sanitizePath(baseName);
-                    CACHED_MODELS.add(cleanBase);
-                    CACHED_MODELS.add(root.namespace + ":" + cleanBase);
+                    String baseName = sanitizePath(stripExtension(name));
+                    CACHED_MODELS.add(baseName);
+                    CACHED_MODELS.add(root.namespace + ":" + baseName);
 
                     String rel = getRelativePath(root.directory, file);
                     String cleanRel = sanitizePath(rel);
 
+                    CACHED_MODELS.add(cleanRel);
+                    CACHED_MODELS.add(root.namespace + ":" + cleanRel);
+
                     indexResource(root.namespace, "geo/" + cleanRel, file);
                     indexResource(root.namespace, "models/" + cleanRel, file);
+                    indexResource(root.namespace, cleanRel, file);
+
+                    indexResource(root.namespace, "geo/" + baseName + ".geo.json", file);
+                    indexResource(root.namespace, "geo/" + baseName + ".json", file);
+                    indexResource(root.namespace, "geo/" + baseName, file);
+                    indexResource(root.namespace, "models/" + baseName + ".geo.json", file);
+                    indexResource(root.namespace, "models/" + baseName + ".json", file);
+                    indexResource(root.namespace, "models/" + baseName, file);
+                    indexResource(root.namespace, baseName + ".geo.json", file);
+                    indexResource(root.namespace, baseName + ".json", file);
+                    indexResource(root.namespace, baseName, file);
+
                     if (cleanRel.endsWith(".geo.json")) {
-                        indexResource(root.namespace, "geo/" + cleanRel.substring(0, cleanRel.length() - 9) + ".json", file);
+                        String noGeo = cleanRel.substring(0, cleanRel.length() - 9);
+                        indexResource(root.namespace, "geo/" + noGeo + ".json", file);
+                        indexResource(root.namespace, "models/" + noGeo + ".json", file);
+                        indexResource(root.namespace, "geo/" + noGeo, file);
+                        indexResource(root.namespace, "models/" + noGeo, file);
+                        indexResource(root.namespace, noGeo, file);
                     }
                 }
             } else if (lower.endsWith(".java")) {
-                String baseName = stripExtension(name);
-                String cleanBase = sanitizePath(baseName);
-                CACHED_MODELS.add(cleanBase);
-                CACHED_MODELS.add(root.namespace + ":" + cleanBase);
+                String baseName = sanitizePath(stripExtension(name));
+                CACHED_MODELS.add(baseName);
+                CACHED_MODELS.add(root.namespace + ":" + baseName);
 
                 String rel = getRelativePath(root.directory, file);
                 String cleanRel = sanitizePath(rel);
+
+                CACHED_MODELS.add(cleanRel);
+                CACHED_MODELS.add(root.namespace + ":" + cleanRel);
+
                 indexResource(root.namespace, "models/" + cleanRel, file);
+                indexResource(root.namespace, cleanRel, file);
+                indexResource(root.namespace, "models/" + baseName + ".java", file);
+                indexResource(root.namespace, baseName + ".java", file);
+                indexResource(root.namespace, baseName, file);
             }
         });
     }
@@ -411,10 +472,19 @@ public class AzureResourceManager {
             if (file.getName().toLowerCase(Locale.ROOT).endsWith(".png")) {
                 String rel = getRelativePath(root.directory, file);
                 String cleanRel = sanitizePath(rel);
+                String baseName = sanitizePath(stripExtension(file.getName()));
+
                 CACHED_TEXTURES.add(cleanRel);
                 CACHED_TEXTURES.add(root.namespace + ":" + cleanRel);
+                CACHED_TEXTURES.add(baseName);
+                CACHED_TEXTURES.add(root.namespace + ":" + baseName);
 
                 indexResource(root.namespace, "textures/" + cleanRel, file);
+                indexResource(root.namespace, cleanRel, file);
+                indexResource(root.namespace, "textures/" + baseName + ".png", file);
+                indexResource(root.namespace, "textures/" + baseName, file);
+                indexResource(root.namespace, baseName + ".png", file);
+                indexResource(root.namespace, baseName, file);
             }
         });
     }
@@ -426,12 +496,27 @@ public class AzureResourceManager {
                 if (isValidAnimationFile(file)) {
                     String rel = getRelativePath(root.directory, file);
                     String cleanRel = sanitizePath(rel);
+                    String baseName = sanitizePath(stripExtension(file.getName()));
+
                     CACHED_ANIMATIONS.add(cleanRel);
                     CACHED_ANIMATIONS.add(root.namespace + ":" + cleanRel);
+                    CACHED_ANIMATIONS.add(baseName);
+                    CACHED_ANIMATIONS.add(root.namespace + ":" + baseName);
 
                     indexResource(root.namespace, "animations/" + cleanRel, file);
+                    indexResource(root.namespace, cleanRel, file);
+                    indexResource(root.namespace, "animations/" + baseName + ".animation.json", file);
+                    indexResource(root.namespace, "animations/" + baseName + ".json", file);
+                    indexResource(root.namespace, "animations/" + baseName, file);
+                    indexResource(root.namespace, baseName + ".animation.json", file);
+                    indexResource(root.namespace, baseName + ".json", file);
+                    indexResource(root.namespace, baseName, file);
+
                     if (cleanRel.endsWith(".animation.json")) {
-                        indexResource(root.namespace, "animations/" + cleanRel.substring(0, cleanRel.length() - 15) + ".json", file);
+                        String noAnim = cleanRel.substring(0, cleanRel.length() - 15);
+                        indexResource(root.namespace, "animations/" + noAnim + ".json", file);
+                        indexResource(root.namespace, "animations/" + noAnim, file);
+                        indexResource(root.namespace, noAnim, file);
                     }
                 }
             }
@@ -444,9 +529,19 @@ public class AzureResourceManager {
                 String rel = getRelativePath(root.directory, file);
                 String relNoExt = stripExtension(rel);
                 String clean = sanitizePath(relNoExt);
+                String baseName = sanitizePath(stripExtension(file.getName()));
+
                 CACHED_SOUNDS.add(root.namespace + ":" + clean);
+                CACHED_SOUNDS.add(root.namespace + ":" + baseName);
+                CACHED_SOUNDS.add(clean);
+                CACHED_SOUNDS.add(baseName);
 
                 indexResource(root.namespace, "sounds/" + clean + ".ogg", file);
+                indexResource(root.namespace, "sounds/" + clean, file);
+                indexResource(root.namespace, "sounds/" + baseName + ".ogg", file);
+                indexResource(root.namespace, "sounds/" + baseName, file);
+                indexResource(root.namespace, baseName + ".ogg", file);
+                indexResource(root.namespace, baseName, file);
             }
         });
     }
@@ -465,43 +560,81 @@ public class AzureResourceManager {
 
     public static File findModelFile(String rawInput) {
         if (rawInput == null || rawInput.trim().isEmpty()) return null;
+        String trimmed = rawInput.trim();
 
-        // 1. Direct index check
-        ResourceLocation directLoc = parseLocation(rawInput, "geo/");
-        if (directLoc != null && RESOURCE_INDEX.containsKey(directLoc)) {
-            return RESOURCE_INDEX.get(directLoc);
+        // 1. Direct file path check on disk
+        File directDiskFile = new File(trimmed);
+        if (directDiskFile.exists() && directDiskFile.isFile() && (isValidGeoModelFile(directDiskFile) || trimmed.toLowerCase(Locale.ROOT).endsWith(".java"))) {
+            return directDiskFile;
         }
 
-        String key = cleanKey(rawInput);
-        ResourceLocation modelLoc = ResourceLocation.tryBuild("azureframelib", "geo/" + key + ".geo.json");
-        if (modelLoc != null && RESOURCE_INDEX.containsKey(modelLoc)) {
-            return RESOURCE_INDEX.get(modelLoc);
+        // 2. Direct exact and prefixed ResourceLocation index checks
+        String[] prefixes = {"", "geo/", "models/", "geo/were/", "models/were/"};
+        String[] suffixes = {"", ".geo.json", ".json"};
+
+        // Try raw location if contains ":"
+        if (trimmed.contains(":")) {
+            String ns = trimmed.substring(0, trimmed.indexOf(':')).toLowerCase(Locale.ROOT);
+            String path = trimmed.substring(trimmed.indexOf(':') + 1).toLowerCase(Locale.ROOT);
+            for (String pfx : prefixes) {
+                for (String sfx : suffixes) {
+                    ResourceLocation loc = ResourceLocation.tryBuild(ns, sanitizePath(pfx + path + sfx));
+                    if (loc != null && RESOURCE_INDEX.containsKey(loc)) {
+                        return RESOURCE_INDEX.get(loc);
+                    }
+                }
+            }
         }
 
-        // 2. Fallback filesystem search across registered roots
+        // Check index with all registered namespaces
+        String clean = cleanKey(trimmed);
+        String baseName = sanitizePath(stripExtension(new File(trimmed).getName()));
+        for (String ns : INDEXED_NAMESPACES) {
+            for (String testKey : new String[]{clean, baseName, trimmed}) {
+                for (String pfx : prefixes) {
+                    for (String sfx : suffixes) {
+                        ResourceLocation loc = ResourceLocation.tryBuild(ns, sanitizePath(pfx + testKey + sfx));
+                        if (loc != null && RESOURCE_INDEX.containsKey(loc)) {
+                            return RESOURCE_INDEX.get(loc);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Fallback filesystem search across registered roots
         for (ResourceRoot root : RESOURCE_ROOTS) {
+            if (!root.directory.exists() || !root.directory.isDirectory()) continue;
+
             if (root.category == ResourceCategory.UNPACKED_BUNDLE) {
-                File unpackedDir = findCaseInsensitiveFile(root.directory, key);
-                if (unpackedDir != null && unpackedDir.isDirectory()) {
-                    File geoFile = findGeoModelInBundle(unpackedDir);
-                    if (geoFile != null) return geoFile;
-                    File javaFile = findFileWithExtensions(unpackedDir, ".java");
-                    if (javaFile != null) return javaFile;
+                // Check if directory matches clean or baseName
+                for (String testName : new String[]{baseName, clean}) {
+                    File unpackedDir = findCaseInsensitiveFile(root.directory, testName);
+                    if (unpackedDir != null && unpackedDir.isDirectory()) {
+                        File geoFile = findGeoModelInBundle(unpackedDir);
+                        if (geoFile != null) return geoFile;
+                        File javaFile = findFileWithExtensions(unpackedDir, ".java");
+                        if (javaFile != null) return javaFile;
+                    }
                 }
-            } else if (root.category == ResourceCategory.MODEL) {
-                File file = findCaseInsensitiveFile(root.directory, key);
-                if (file != null && file.isFile() && (isValidGeoModelFile(file) || file.getName().toLowerCase(Locale.ROOT).endsWith(".java"))) {
-                    return file;
+            }
+
+            // Check case-insensitive relative subpaths
+            for (String testPath : new String[]{clean, baseName, trimmed}) {
+                for (String sfx : suffixes) {
+                    File subFile = findCaseInsensitiveFile(root.directory, testPath + sfx);
+                    if (subFile != null && subFile.isFile() && (isValidGeoModelFile(subFile) || subFile.getName().toLowerCase(Locale.ROOT).endsWith(".java"))) {
+                        return subFile;
+                    }
                 }
+            }
 
-                File geoFile = findFileWithExtensions(root.directory, key + ".geo.json");
-                if (geoFile != null && isValidGeoModelFile(geoFile)) return geoFile;
-
-                File jsonFile = findFileWithExtensions(root.directory, key + ".json");
-                if (jsonFile != null && isValidGeoModelFile(jsonFile)) return jsonFile;
-
-                File javaFile = findFileWithExtensions(root.directory, key + ".java");
-                if (javaFile != null) return javaFile;
+            // Recursive search by file name
+            for (String sfx : new String[]{".geo.json", ".json", ".java"}) {
+                File found = findFileRecursiveByName(root.directory, baseName + sfx);
+                if (found != null && found.isFile() && (isValidGeoModelFile(found) || found.getName().toLowerCase(Locale.ROOT).endsWith(".java"))) {
+                    return found;
+                }
             }
         }
         return null;
@@ -509,17 +642,31 @@ public class AzureResourceManager {
 
     public static File findJavaModelFile(String rawInput) {
         if (rawInput == null || rawInput.trim().isEmpty()) return null;
-        String key = cleanKey(rawInput);
+        String trimmed = rawInput.trim();
+
+        File directDiskFile = new File(trimmed);
+        if (directDiskFile.exists() && directDiskFile.isFile() && directDiskFile.getName().toLowerCase(Locale.ROOT).endsWith(".java")) {
+            return directDiskFile;
+        }
+
+        String key = cleanKey(trimmed);
+        String baseName = sanitizePath(stripExtension(new File(trimmed).getName()));
+
         for (ResourceRoot root : RESOURCE_ROOTS) {
+            if (!root.directory.exists() || !root.directory.isDirectory()) continue;
             if (root.category == ResourceCategory.UNPACKED_BUNDLE) {
-                File unpackedDir = findCaseInsensitiveFile(root.directory, key);
-                if (unpackedDir != null && unpackedDir.isDirectory()) {
-                    File javaFile = findFileWithExtensions(unpackedDir, ".java");
-                    if (javaFile != null) return javaFile;
+                for (String testName : new String[]{baseName, key}) {
+                    File unpackedDir = findCaseInsensitiveFile(root.directory, testName);
+                    if (unpackedDir != null && unpackedDir.isDirectory()) {
+                        File javaFile = findFileWithExtensions(unpackedDir, ".java");
+                        if (javaFile != null) return javaFile;
+                    }
                 }
             } else if (root.category == ResourceCategory.MODEL) {
-                File javaFile = findFileWithExtensions(root.directory, key + ".java");
-                if (javaFile != null) return javaFile;
+                for (String testName : new String[]{baseName, key}) {
+                    File javaFile = findFileWithExtensions(root.directory, testName + ".java");
+                    if (javaFile != null) return javaFile;
+                }
             }
         }
         return null;
@@ -527,36 +674,74 @@ public class AzureResourceManager {
 
     public static File findAnimationFile(String rawInput) {
         if (rawInput == null || rawInput.trim().isEmpty()) return null;
+        String trimmed = rawInput.trim();
 
-        // 1. Direct index check
-        ResourceLocation directLoc = parseLocation(rawInput, "animations/");
-        if (directLoc != null && RESOURCE_INDEX.containsKey(directLoc)) {
-            return RESOURCE_INDEX.get(directLoc);
+        // 1. Direct disk file check
+        File directDiskFile = new File(trimmed);
+        if (directDiskFile.exists() && directDiskFile.isFile() && isValidAnimationFile(directDiskFile)) {
+            return directDiskFile;
         }
 
-        String key = cleanKey(rawInput);
-        ResourceLocation animLoc = ResourceLocation.tryBuild("azureframelib", "animations/" + key + ".animation.json");
-        if (animLoc != null && RESOURCE_INDEX.containsKey(animLoc)) {
-            return RESOURCE_INDEX.get(animLoc);
-        }
+        // 2. Direct exact and prefixed ResourceLocation index checks
+        String[] prefixes = {"", "animations/", "animations/were/"};
+        String[] suffixes = {"", ".animation.json", ".json"};
 
-        // 2. Fallback filesystem search across registered roots
-        for (ResourceRoot root : RESOURCE_ROOTS) {
-            if (root.category == ResourceCategory.UNPACKED_BUNDLE) {
-                File unpackedDir = findCaseInsensitiveFile(root.directory, key);
-                if (unpackedDir != null && unpackedDir.isDirectory()) {
-                    File animFile = findAnimationInBundle(unpackedDir);
-                    if (animFile != null) return animFile;
+        if (trimmed.contains(":")) {
+            String ns = trimmed.substring(0, trimmed.indexOf(':')).toLowerCase(Locale.ROOT);
+            String path = trimmed.substring(trimmed.indexOf(':') + 1).toLowerCase(Locale.ROOT);
+            for (String pfx : prefixes) {
+                for (String sfx : suffixes) {
+                    ResourceLocation loc = ResourceLocation.tryBuild(ns, sanitizePath(pfx + path + sfx));
+                    if (loc != null && RESOURCE_INDEX.containsKey(loc)) {
+                        return RESOURCE_INDEX.get(loc);
+                    }
                 }
-            } else if (root.category == ResourceCategory.ANIMATION) {
-                File file = findCaseInsensitiveFile(root.directory, key);
-                if (file != null && file.isFile() && isValidAnimationFile(file)) return file;
+            }
+        }
 
-                File animFile = findFileWithExtensions(root.directory, key + ".animation.json");
-                if (animFile != null && isValidAnimationFile(animFile)) return animFile;
+        String clean = cleanKey(trimmed);
+        String baseName = sanitizePath(stripExtension(new File(trimmed).getName()));
+        for (String ns : INDEXED_NAMESPACES) {
+            for (String testKey : new String[]{clean, baseName, trimmed}) {
+                for (String pfx : prefixes) {
+                    for (String sfx : suffixes) {
+                        ResourceLocation loc = ResourceLocation.tryBuild(ns, sanitizePath(pfx + testKey + sfx));
+                        if (loc != null && RESOURCE_INDEX.containsKey(loc)) {
+                            return RESOURCE_INDEX.get(loc);
+                        }
+                    }
+                }
+            }
+        }
 
-                File jsonFile = findFileWithExtensions(root.directory, key + ".json");
-                if (jsonFile != null && isValidAnimationFile(jsonFile)) return jsonFile;
+        // 3. Fallback filesystem search across registered roots
+        for (ResourceRoot root : RESOURCE_ROOTS) {
+            if (!root.directory.exists() || !root.directory.isDirectory()) continue;
+
+            if (root.category == ResourceCategory.UNPACKED_BUNDLE) {
+                for (String testName : new String[]{baseName, clean}) {
+                    File unpackedDir = findCaseInsensitiveFile(root.directory, testName);
+                    if (unpackedDir != null && unpackedDir.isDirectory()) {
+                        File animFile = findAnimationInBundle(unpackedDir);
+                        if (animFile != null) return animFile;
+                    }
+                }
+            }
+
+            for (String testPath : new String[]{clean, baseName, trimmed}) {
+                for (String sfx : suffixes) {
+                    File subFile = findCaseInsensitiveFile(root.directory, testPath + sfx);
+                    if (subFile != null && subFile.isFile() && isValidAnimationFile(subFile)) {
+                        return subFile;
+                    }
+                }
+            }
+
+            for (String sfx : new String[]{".animation.json", ".json"}) {
+                File found = findFileRecursiveByName(root.directory, baseName + sfx);
+                if (found != null && found.isFile() && isValidAnimationFile(found)) {
+                    return found;
+                }
             }
         }
         return null;
@@ -564,52 +749,122 @@ public class AzureResourceManager {
 
     public static File findTextureFile(String rawInput) {
         if (rawInput == null || rawInput.trim().isEmpty()) return null;
+        String trimmed = rawInput.trim();
 
-        // 1. Direct index check
-        ResourceLocation directLoc = parseLocation(rawInput, "textures/");
-        if (directLoc != null && RESOURCE_INDEX.containsKey(directLoc)) {
-            return RESOURCE_INDEX.get(directLoc);
+        // 1. Direct disk file check
+        File directDiskFile = new File(trimmed);
+        if (directDiskFile.exists() && directDiskFile.isFile() && directDiskFile.getName().toLowerCase(Locale.ROOT).endsWith(".png")) {
+            return directDiskFile;
         }
 
-        String key = cleanKey(rawInput);
-        ResourceLocation texLoc = ResourceLocation.tryBuild("azureframelib", "textures/" + key + ".png");
-        if (texLoc != null && RESOURCE_INDEX.containsKey(texLoc)) {
-            return RESOURCE_INDEX.get(texLoc);
-        }
+        // 2. Direct exact and prefixed ResourceLocation index checks
+        String[] prefixes = {"", "textures/", "textures/were/", "textures/parts/", "textures/entity/"};
+        String[] suffixes = {"", ".png"};
 
-        // 2. Fallback search
-        String withPng = key.toLowerCase(Locale.ROOT).endsWith(".png") ? key : key + ".png";
-        for (ResourceRoot root : RESOURCE_ROOTS) {
-            if (root.category == ResourceCategory.UNPACKED_BUNDLE || root.category == ResourceCategory.TEXTURE) {
-                File found = findFileRecursiveByName(root.directory, withPng);
-                if (found != null && found.isFile()) return found;
+        if (trimmed.contains(":")) {
+            String ns = trimmed.substring(0, trimmed.indexOf(':')).toLowerCase(Locale.ROOT);
+            String path = trimmed.substring(trimmed.indexOf(':') + 1).toLowerCase(Locale.ROOT);
+            for (String pfx : prefixes) {
+                for (String sfx : suffixes) {
+                    ResourceLocation loc = ResourceLocation.tryBuild(ns, sanitizePath(pfx + path + sfx));
+                    if (loc != null && RESOURCE_INDEX.containsKey(loc)) {
+                        return RESOURCE_INDEX.get(loc);
+                    }
+                }
             }
+        }
+
+        String clean = cleanKey(trimmed);
+        String baseName = sanitizePath(stripExtension(new File(trimmed).getName()));
+        for (String ns : INDEXED_NAMESPACES) {
+            for (String testKey : new String[]{clean, baseName, trimmed}) {
+                for (String pfx : prefixes) {
+                    for (String sfx : suffixes) {
+                        ResourceLocation loc = ResourceLocation.tryBuild(ns, sanitizePath(pfx + testKey + sfx));
+                        if (loc != null && RESOURCE_INDEX.containsKey(loc)) {
+                            return RESOURCE_INDEX.get(loc);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Fallback filesystem search across registered roots
+        for (ResourceRoot root : RESOURCE_ROOTS) {
+            if (!root.directory.exists() || !root.directory.isDirectory()) continue;
+
+            for (String testPath : new String[]{clean, baseName, trimmed}) {
+                for (String sfx : suffixes) {
+                    File subFile = findCaseInsensitiveFile(root.directory, testPath + sfx);
+                    if (subFile != null && subFile.isFile() && subFile.getName().toLowerCase(Locale.ROOT).endsWith(".png")) {
+                        return subFile;
+                    }
+                }
+            }
+
+            File found = findFileRecursiveByName(root.directory, baseName + ".png");
+            if (found != null && found.isFile()) return found;
         }
         return null;
     }
 
     public static File findSoundFile(String rawInput) {
         if (rawInput == null || rawInput.trim().isEmpty()) return null;
+        String trimmed = rawInput.trim();
 
-        // 1. Direct index check
-        ResourceLocation directLoc = parseLocation(rawInput, "sounds/");
-        if (directLoc != null && RESOURCE_INDEX.containsKey(directLoc)) {
-            return RESOURCE_INDEX.get(directLoc);
+        // 1. Direct disk file check
+        File directDiskFile = new File(trimmed);
+        if (directDiskFile.exists() && directDiskFile.isFile() && directDiskFile.getName().toLowerCase(Locale.ROOT).endsWith(".ogg")) {
+            return directDiskFile;
         }
 
-        String key = cleanKey(rawInput);
-        ResourceLocation soundLoc = ResourceLocation.tryBuild("azureframelib", "sounds/" + key + ".ogg");
-        if (soundLoc != null && RESOURCE_INDEX.containsKey(soundLoc)) {
-            return RESOURCE_INDEX.get(soundLoc);
-        }
+        // 2. Direct exact and prefixed ResourceLocation index checks
+        String[] prefixes = {"", "sounds/", "sounds/were/"};
+        String[] suffixes = {"", ".ogg"};
 
-        // 2. Fallback search
-        String withOgg = key.toLowerCase(Locale.ROOT).endsWith(".ogg") ? key : key + ".ogg";
-        for (ResourceRoot root : RESOURCE_ROOTS) {
-            if (root.category == ResourceCategory.SOUND || root.category == ResourceCategory.UNPACKED_BUNDLE) {
-                File found = findFileRecursiveByName(root.directory, withOgg);
-                if (found != null && found.isFile()) return found;
+        if (trimmed.contains(":")) {
+            String ns = trimmed.substring(0, trimmed.indexOf(':')).toLowerCase(Locale.ROOT);
+            String path = trimmed.substring(trimmed.indexOf(':') + 1).toLowerCase(Locale.ROOT);
+            for (String pfx : prefixes) {
+                for (String sfx : suffixes) {
+                    ResourceLocation loc = ResourceLocation.tryBuild(ns, sanitizePath(pfx + path + sfx));
+                    if (loc != null && RESOURCE_INDEX.containsKey(loc)) {
+                        return RESOURCE_INDEX.get(loc);
+                    }
+                }
             }
+        }
+
+        String clean = cleanKey(trimmed);
+        String baseName = sanitizePath(stripExtension(new File(trimmed).getName()));
+        for (String ns : INDEXED_NAMESPACES) {
+            for (String testKey : new String[]{clean, baseName, trimmed}) {
+                for (String pfx : prefixes) {
+                    for (String sfx : suffixes) {
+                        ResourceLocation loc = ResourceLocation.tryBuild(ns, sanitizePath(pfx + testKey + sfx));
+                        if (loc != null && RESOURCE_INDEX.containsKey(loc)) {
+                            return RESOURCE_INDEX.get(loc);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Fallback filesystem search across registered roots
+        for (ResourceRoot root : RESOURCE_ROOTS) {
+            if (!root.directory.exists() || !root.directory.isDirectory()) continue;
+
+            for (String testPath : new String[]{clean, baseName, trimmed}) {
+                for (String sfx : suffixes) {
+                    File subFile = findCaseInsensitiveFile(root.directory, testPath + sfx);
+                    if (subFile != null && subFile.isFile() && subFile.getName().toLowerCase(Locale.ROOT).endsWith(".ogg")) {
+                        return subFile;
+                    }
+                }
+            }
+
+            File found = findFileRecursiveByName(root.directory, baseName + ".ogg");
+            if (found != null && found.isFile()) return found;
         }
         return null;
     }
@@ -745,8 +1000,12 @@ public class AzureResourceManager {
         }
     }
 
-    private static String stripExtension(String filename) {
-        int idx = filename.indexOf('.');
+    public static String stripExtension(String filename) {
+        if (filename == null) return "";
+        String lower = filename.toLowerCase(Locale.ROOT);
+        if (lower.endsWith(".animation.json")) return filename.substring(0, filename.length() - 15);
+        if (lower.endsWith(".geo.json")) return filename.substring(0, filename.length() - 9);
+        int idx = filename.lastIndexOf('.');
         return idx > 0 ? filename.substring(0, idx) : filename;
     }
 
@@ -761,13 +1020,14 @@ public class AzureResourceManager {
     }
 
     private static File findCaseInsensitiveFile(File parent, String relPath) {
-        if (parent == null || !parent.exists() || !parent.isDirectory()) return null;
+        if (parent == null || !parent.exists() || !parent.isDirectory() || relPath == null) return null;
         File exact = new File(parent, relPath);
         if (exact.exists()) return exact;
 
         String[] parts = relPath.replace('\\', '/').split("/");
         File current = parent;
         for (String part : parts) {
+            if (part.isEmpty()) continue;
             if (!current.exists() || !current.isDirectory()) return null;
             File[] children = current.listFiles();
             if (children == null) return null;
@@ -791,7 +1051,11 @@ public class AzureResourceManager {
             if (f.isFile()) {
                 String nameLower = f.getName().toLowerCase(Locale.ROOT);
                 for (String ext : extensions) {
-                    if (nameLower.endsWith(ext.toLowerCase(Locale.ROOT))) {
+                    String cleanExt = ext.replace('\\', '/');
+                    if (cleanExt.contains("/")) {
+                        cleanExt = cleanExt.substring(cleanExt.lastIndexOf('/') + 1);
+                    }
+                    if (nameLower.equalsIgnoreCase(cleanExt.toLowerCase(Locale.ROOT)) || nameLower.endsWith(cleanExt.toLowerCase(Locale.ROOT))) {
                         return f;
                     }
                 }
@@ -807,16 +1071,20 @@ public class AzureResourceManager {
     }
 
     private static File findFileRecursiveByName(File dir, String targetName) {
+        if (dir == null || !dir.exists() || !dir.isDirectory() || targetName == null) return null;
+        String cleanTarget = targetName.replace('\\', '/');
+        String pureTarget = cleanTarget.contains("/") ? cleanTarget.substring(cleanTarget.lastIndexOf('/') + 1) : cleanTarget;
+
         File[] files = dir.listFiles();
         if (files == null) return null;
         for (File f : files) {
-            if (f.isFile() && (f.getName().equalsIgnoreCase(targetName) || sanitizePath(f.getName()).equalsIgnoreCase(sanitizePath(targetName)))) {
+            if (f.isFile() && (f.getName().equalsIgnoreCase(pureTarget) || sanitizePath(f.getName()).equalsIgnoreCase(sanitizePath(pureTarget)))) {
                 return f;
             }
         }
         for (File f : files) {
             if (f.isDirectory()) {
-                File found = findFileRecursiveByName(f, targetName);
+                File found = findFileRecursiveByName(f, pureTarget);
                 if (found != null) return found;
             }
         }
