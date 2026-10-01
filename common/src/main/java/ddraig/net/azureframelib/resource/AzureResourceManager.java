@@ -193,7 +193,7 @@ public class AzureResourceManager {
     public static boolean isValidGeoModelFile(File file) {
         if (file == null || !file.exists() || !file.isFile() || file.length() < 10) return false;
         String name = file.getName().toLowerCase(Locale.ROOT);
-        if (name.endsWith(".animation.json") || name.endsWith(".java")) return false;
+        if (name.endsWith(".png") || name.endsWith(".ogg") || name.endsWith(".animation.json") || name.endsWith(".java") || name.endsWith(".class") || name.endsWith(".jar")) return false;
         if (IGNORED_CONFIG_JSONS.contains(name)) return false;
         if (!name.endsWith(".geo.json") && !name.endsWith(".json")) return false;
 
@@ -206,9 +206,18 @@ public class AzureResourceManager {
         return false;
     }
 
+    public static boolean isModelFile(File file) {
+        if (file == null || !file.exists() || !file.isFile() || file.length() < 10) return false;
+        String name = file.getName().toLowerCase(Locale.ROOT);
+        if (name.endsWith(".png") || name.endsWith(".ogg") || name.endsWith(".animation.json") || name.endsWith(".class") || name.endsWith(".jar")) return false;
+        if (name.endsWith(".java")) return true;
+        return isValidGeoModelFile(file);
+    }
+
     public static boolean isValidAnimationFile(File file) {
         if (file == null || !file.exists() || !file.isFile() || file.length() < 10) return false;
         String name = file.getName().toLowerCase(Locale.ROOT);
+        if (name.endsWith(".png") || name.endsWith(".ogg") || name.endsWith(".geo.json") || name.endsWith(".java") || name.endsWith(".class") || name.endsWith(".jar")) return false;
         if (IGNORED_CONFIG_JSONS.contains(name)) return false;
         if (!name.endsWith(".animation.json") && !name.endsWith(".json")) return false;
 
@@ -345,8 +354,6 @@ public class AzureResourceManager {
                 indexResource(root.namespace, "animations/" + cleanId + ".json", animFile);
                 indexResource(root.namespace, "animations/" + cleanId, animFile);
                 indexResource(root.namespace, cleanId + ".animation.json", animFile);
-                indexResource(root.namespace, cleanId + ".json", animFile);
-                indexResource(root.namespace, cleanId, animFile);
 
                 String animName = animFile.getName();
                 int idx = animName.toLowerCase(Locale.ROOT).indexOf(".animation.json");
@@ -357,8 +364,6 @@ public class AzureResourceManager {
                         indexResource(root.namespace, "animations/" + cleanAnimName + ".json", animFile);
                         indexResource(root.namespace, "animations/" + cleanAnimName, animFile);
                         indexResource(root.namespace, cleanAnimName + ".animation.json", animFile);
-                        indexResource(root.namespace, cleanAnimName + ".json", animFile);
-                        indexResource(root.namespace, cleanAnimName, animFile);
                         CACHED_ANIMATIONS.add(cleanAnimName);
                         CACHED_ANIMATIONS.add(root.namespace + ":" + cleanAnimName);
                     }
@@ -382,9 +387,7 @@ public class AzureResourceManager {
                     indexResource(root.namespace, "textures/" + cleanRel, file);
                     indexResource(root.namespace, "textures/" + baseName + ".png", file);
                     indexResource(root.namespace, "textures/" + baseName, file);
-                    indexResource(root.namespace, cleanRel, file);
                     indexResource(root.namespace, baseName + ".png", file);
-                    indexResource(root.namespace, baseName, file);
                 }
             });
 
@@ -402,7 +405,6 @@ public class AzureResourceManager {
                     indexResource(root.namespace, "sounds/" + baseName + ".ogg", file);
                     indexResource(root.namespace, "sounds/" + baseName, file);
                     indexResource(root.namespace, baseName + ".ogg", file);
-                    indexResource(root.namespace, baseName, file);
                 }
             });
         }
@@ -480,11 +482,9 @@ public class AzureResourceManager {
                 CACHED_TEXTURES.add(root.namespace + ":" + baseName);
 
                 indexResource(root.namespace, "textures/" + cleanRel, file);
-                indexResource(root.namespace, cleanRel, file);
                 indexResource(root.namespace, "textures/" + baseName + ".png", file);
                 indexResource(root.namespace, "textures/" + baseName, file);
                 indexResource(root.namespace, baseName + ".png", file);
-                indexResource(root.namespace, baseName, file);
             }
         });
     }
@@ -504,19 +504,15 @@ public class AzureResourceManager {
                     CACHED_ANIMATIONS.add(root.namespace + ":" + baseName);
 
                     indexResource(root.namespace, "animations/" + cleanRel, file);
-                    indexResource(root.namespace, cleanRel, file);
                     indexResource(root.namespace, "animations/" + baseName + ".animation.json", file);
                     indexResource(root.namespace, "animations/" + baseName + ".json", file);
                     indexResource(root.namespace, "animations/" + baseName, file);
                     indexResource(root.namespace, baseName + ".animation.json", file);
-                    indexResource(root.namespace, baseName + ".json", file);
-                    indexResource(root.namespace, baseName, file);
 
                     if (cleanRel.endsWith(".animation.json")) {
                         String noAnim = cleanRel.substring(0, cleanRel.length() - 15);
                         indexResource(root.namespace, "animations/" + noAnim + ".json", file);
                         indexResource(root.namespace, "animations/" + noAnim, file);
-                        indexResource(root.namespace, noAnim, file);
                     }
                 }
             }
@@ -541,7 +537,6 @@ public class AzureResourceManager {
                 indexResource(root.namespace, "sounds/" + baseName + ".ogg", file);
                 indexResource(root.namespace, "sounds/" + baseName, file);
                 indexResource(root.namespace, baseName + ".ogg", file);
-                indexResource(root.namespace, baseName, file);
             }
         });
     }
@@ -580,7 +575,10 @@ public class AzureResourceManager {
                 for (String sfx : suffixes) {
                     ResourceLocation loc = ResourceLocation.tryBuild(ns, sanitizePath(pfx + path + sfx));
                     if (loc != null && RESOURCE_INDEX.containsKey(loc)) {
-                        return RESOURCE_INDEX.get(loc);
+                        File candidate = RESOURCE_INDEX.get(loc);
+                        if (isModelFile(candidate)) {
+                            return candidate;
+                        }
                     }
                 }
             }
@@ -595,7 +593,10 @@ public class AzureResourceManager {
                     for (String sfx : suffixes) {
                         ResourceLocation loc = ResourceLocation.tryBuild(ns, sanitizePath(pfx + testKey + sfx));
                         if (loc != null && RESOURCE_INDEX.containsKey(loc)) {
-                            return RESOURCE_INDEX.get(loc);
+                            File candidate = RESOURCE_INDEX.get(loc);
+                            if (isModelFile(candidate)) {
+                                return candidate;
+                            }
                         }
                     }
                 }
@@ -623,7 +624,7 @@ public class AzureResourceManager {
             for (String testPath : new String[]{clean, baseName, trimmed}) {
                 for (String sfx : suffixes) {
                     File subFile = findCaseInsensitiveFile(root.directory, testPath + sfx);
-                    if (subFile != null && subFile.isFile() && (isValidGeoModelFile(subFile) || subFile.getName().toLowerCase(Locale.ROOT).endsWith(".java"))) {
+                    if (subFile != null && subFile.isFile() && isModelFile(subFile)) {
                         return subFile;
                     }
                 }
@@ -632,7 +633,7 @@ public class AzureResourceManager {
             // Recursive search by file name
             for (String sfx : new String[]{".geo.json", ".json", ".java"}) {
                 File found = findFileRecursiveByName(root.directory, baseName + sfx);
-                if (found != null && found.isFile() && (isValidGeoModelFile(found) || found.getName().toLowerCase(Locale.ROOT).endsWith(".java"))) {
+                if (found != null && found.isFile() && isModelFile(found)) {
                     return found;
                 }
             }
@@ -693,7 +694,10 @@ public class AzureResourceManager {
                 for (String sfx : suffixes) {
                     ResourceLocation loc = ResourceLocation.tryBuild(ns, sanitizePath(pfx + path + sfx));
                     if (loc != null && RESOURCE_INDEX.containsKey(loc)) {
-                        return RESOURCE_INDEX.get(loc);
+                        File candidate = RESOURCE_INDEX.get(loc);
+                        if (candidate != null && isValidAnimationFile(candidate)) {
+                            return candidate;
+                        }
                     }
                 }
             }
@@ -707,7 +711,10 @@ public class AzureResourceManager {
                     for (String sfx : suffixes) {
                         ResourceLocation loc = ResourceLocation.tryBuild(ns, sanitizePath(pfx + testKey + sfx));
                         if (loc != null && RESOURCE_INDEX.containsKey(loc)) {
-                            return RESOURCE_INDEX.get(loc);
+                            File candidate = RESOURCE_INDEX.get(loc);
+                            if (candidate != null && isValidAnimationFile(candidate)) {
+                                return candidate;
+                            }
                         }
                     }
                 }
@@ -768,7 +775,10 @@ public class AzureResourceManager {
                 for (String sfx : suffixes) {
                     ResourceLocation loc = ResourceLocation.tryBuild(ns, sanitizePath(pfx + path + sfx));
                     if (loc != null && RESOURCE_INDEX.containsKey(loc)) {
-                        return RESOURCE_INDEX.get(loc);
+                        File candidate = RESOURCE_INDEX.get(loc);
+                        if (candidate != null && candidate.isFile() && candidate.getName().toLowerCase(Locale.ROOT).endsWith(".png")) {
+                            return candidate;
+                        }
                     }
                 }
             }
@@ -782,7 +792,10 @@ public class AzureResourceManager {
                     for (String sfx : suffixes) {
                         ResourceLocation loc = ResourceLocation.tryBuild(ns, sanitizePath(pfx + testKey + sfx));
                         if (loc != null && RESOURCE_INDEX.containsKey(loc)) {
-                            return RESOURCE_INDEX.get(loc);
+                            File candidate = RESOURCE_INDEX.get(loc);
+                            if (candidate != null && candidate.isFile() && candidate.getName().toLowerCase(Locale.ROOT).endsWith(".png")) {
+                                return candidate;
+                            }
                         }
                     }
                 }
@@ -803,7 +816,7 @@ public class AzureResourceManager {
             }
 
             File found = findFileRecursiveByName(root.directory, baseName + ".png");
-            if (found != null && found.isFile()) return found;
+            if (found != null && found.isFile() && found.getName().toLowerCase(Locale.ROOT).endsWith(".png")) return found;
         }
         return null;
     }
@@ -829,7 +842,10 @@ public class AzureResourceManager {
                 for (String sfx : suffixes) {
                     ResourceLocation loc = ResourceLocation.tryBuild(ns, sanitizePath(pfx + path + sfx));
                     if (loc != null && RESOURCE_INDEX.containsKey(loc)) {
-                        return RESOURCE_INDEX.get(loc);
+                        File candidate = RESOURCE_INDEX.get(loc);
+                        if (candidate != null && candidate.isFile() && candidate.getName().toLowerCase(Locale.ROOT).endsWith(".ogg")) {
+                            return candidate;
+                        }
                     }
                 }
             }
@@ -843,7 +859,10 @@ public class AzureResourceManager {
                     for (String sfx : suffixes) {
                         ResourceLocation loc = ResourceLocation.tryBuild(ns, sanitizePath(pfx + testKey + sfx));
                         if (loc != null && RESOURCE_INDEX.containsKey(loc)) {
-                            return RESOURCE_INDEX.get(loc);
+                            File candidate = RESOURCE_INDEX.get(loc);
+                            if (candidate != null && candidate.isFile() && candidate.getName().toLowerCase(Locale.ROOT).endsWith(".ogg")) {
+                                return candidate;
+                            }
                         }
                     }
                 }
@@ -864,7 +883,7 @@ public class AzureResourceManager {
             }
 
             File found = findFileRecursiveByName(root.directory, baseName + ".ogg");
-            if (found != null && found.isFile()) return found;
+            if (found != null && found.isFile() && found.getName().toLowerCase(Locale.ROOT).endsWith(".ogg")) return found;
         }
         return null;
     }
@@ -900,6 +919,12 @@ public class AzureResourceManager {
 
         List<String> keys = new ArrayList<>();
         File animFile = findAnimationFile(clean);
+        if (animFile == null && modelOrAnimId.contains(":")) {
+            animFile = findAnimationFile(modelOrAnimId);
+        }
+        if (animFile == null) {
+            animFile = findAnimationFile(clean + ".animation.json");
+        }
         if (animFile != null && animFile.exists() && animFile.isFile() && animFile.length() > 0) {
             try (FileReader reader = new FileReader(animFile)) {
                 JsonObject json = GSON.fromJson(reader, JsonObject.class);
@@ -915,7 +940,9 @@ public class AzureResourceManager {
         }
 
         Collections.sort(keys);
-        CACHED_MODEL_ANIM_KEYS.put(clean, Collections.unmodifiableList(keys));
+        if (!keys.isEmpty()) {
+            CACHED_MODEL_ANIM_KEYS.put(clean, Collections.unmodifiableList(keys));
+        }
         return keys;
     }
 

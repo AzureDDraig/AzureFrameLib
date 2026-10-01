@@ -25,10 +25,14 @@ public class GeckoLibModelLoader {
 
     private static final Map<ResourceLocation, Object> FALLBACK_MODELS = new ConcurrentHashMap<>();
     private static final Map<ResourceLocation, Object> FALLBACK_ANIMATIONS = new ConcurrentHashMap<>();
+    private static final java.util.Set<ResourceLocation> FAILED_MODELS = Collections.newSetFromMap(new ConcurrentHashMap<>());
+    private static final java.util.Set<ResourceLocation> FAILED_ANIMATIONS = Collections.newSetFromMap(new ConcurrentHashMap<>());
 
     public static void clearCaches() {
         FALLBACK_MODELS.clear();
         FALLBACK_ANIMATIONS.clear();
+        FAILED_MODELS.clear();
+        FAILED_ANIMATIONS.clear();
         try {
             Class<?> cacheClass = Class.forName("software.bernie.geckolib.cache.GeckoLibCache");
             Method getModelsMethod = cacheClass.getMethod("getBakedModels");
@@ -48,6 +52,8 @@ public class GeckoLibModelLoader {
     public static void clearModel(String modelId) {
         if (modelId == null || modelId.isEmpty()) return;
         String clean = AzureResourceManager.sanitizePath(modelId);
+        FAILED_MODELS.removeIf(loc -> loc.getPath().contains(clean));
+        FAILED_ANIMATIONS.removeIf(loc -> loc.getPath().contains(clean));
 
         try {
             Class<?> cacheClass = Class.forName("software.bernie.geckolib.cache.GeckoLibCache");
@@ -69,7 +75,7 @@ public class GeckoLibModelLoader {
      * Retrieves an existing baked model or bakes it on the fly from any registered framework config folder.
      */
     public static Object getOrLoadBakedModel(ResourceLocation location) {
-        if (location == null) return null;
+        if (location == null || FAILED_MODELS.contains(location)) return null;
 
         try {
             Class<?> cacheClass = Class.forName("software.bernie.geckolib.cache.GeckoLibCache");
@@ -112,6 +118,7 @@ public class GeckoLibModelLoader {
             }
         }
 
+        FAILED_MODELS.add(location);
         return null;
     }
 
@@ -119,7 +126,7 @@ public class GeckoLibModelLoader {
      * Retrieves existing baked animations or bakes them on the fly from any registered framework config folder.
      */
     public static Object getOrLoadBakedAnimations(ResourceLocation location) {
-        if (location == null) return null;
+        if (location == null || FAILED_ANIMATIONS.contains(location)) return null;
 
         try {
             Class<?> cacheClass = Class.forName("software.bernie.geckolib.cache.GeckoLibCache");
@@ -159,11 +166,17 @@ public class GeckoLibModelLoader {
             }
         }
 
+        FAILED_ANIMATIONS.add(location);
         return null;
     }
 
     public static Object bakeModelFromFile(ResourceLocation location, File file) {
-        if (file == null || !file.exists()) return null;
+        if (file == null || !file.exists() || !file.isFile()) return null;
+        String name = file.getName().toLowerCase(Locale.ROOT);
+        if (name.endsWith(".png") || name.endsWith(".ogg") || name.endsWith(".animation.json") || name.endsWith(".java") || name.endsWith(".class") || name.endsWith(".jar")) {
+            return null;
+        }
+        if (!AzureResourceManager.isValidGeoModelFile(file)) return null;
         try {
             String content = Files.readString(file.toPath());
             return bakeModelFromJson(location, content);
@@ -239,7 +252,12 @@ public class GeckoLibModelLoader {
     }
 
     public static Object bakeAnimationsFromFile(ResourceLocation location, File file) {
-        if (file == null || !file.exists()) return null;
+        if (file == null || !file.exists() || !file.isFile()) return null;
+        String name = file.getName().toLowerCase(Locale.ROOT);
+        if (name.endsWith(".png") || name.endsWith(".ogg") || name.endsWith(".geo.json") || name.endsWith(".java") || name.endsWith(".class") || name.endsWith(".jar")) {
+            return null;
+        }
+        if (!AzureResourceManager.isValidAnimationFile(file)) return null;
         try {
             String content = Files.readString(file.toPath());
             return bakeAnimationsFromJson(location, content);
