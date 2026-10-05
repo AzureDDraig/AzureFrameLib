@@ -52,6 +52,15 @@ public class AzureDynamicPackResources implements PackResources {
 
         String path = location.getPath();
 
+        // 0. Metadata (.mcmeta) requests: NEVER return a .png or other binary/model file for metadata requests
+        if (path.endsWith(".mcmeta")) {
+            File metaFile = findMcmetaFile(location);
+            if (metaFile != null && metaFile.exists() && metaFile.isFile() && metaFile.getName().toLowerCase(Locale.ROOT).endsWith(".mcmeta")) {
+                return () -> new FileInputStream(metaFile);
+            }
+            return null;
+        }
+
         // 1. Dynamic sounds.json
         if (path.equals("sounds.json")) {
             String json = generateSoundsJson(namespace);
@@ -61,7 +70,8 @@ public class AzureDynamicPackResources implements PackResources {
 
         // 2. High-speed exact index lookup
         File indexed = AzureResourceManager.getResourceIndex().get(location);
-        if (indexed != null && indexed.exists()) {
+        if (indexed != null && indexed.exists() && indexed.isFile()) {
+            String nameLower = indexed.getName().toLowerCase(Locale.ROOT);
             if (path.startsWith("geo/") || path.startsWith("models/")) {
                 if (AzureResourceManager.isValidGeoModelFile(indexed)) {
                     return createIoSupplier(location, indexed);
@@ -71,15 +81,24 @@ public class AzureDynamicPackResources implements PackResources {
                     return createIoSupplier(location, indexed);
                 }
             } else if (path.startsWith("textures/")) {
-                if (indexed.getName().toLowerCase(java.util.Locale.ROOT).endsWith(".png")) {
+                if (nameLower.endsWith(".png")) {
                     return createIoSupplier(location, indexed);
                 }
             } else if (path.startsWith("sounds/")) {
-                if (indexed.getName().toLowerCase(java.util.Locale.ROOT).endsWith(".ogg")) {
+                if (nameLower.endsWith(".ogg")) {
                     return createIoSupplier(location, indexed);
                 }
             } else {
-                return createIoSupplier(location, indexed);
+                // Non-standard path: strictly verify requested extension matches file extension
+                if (path.endsWith(".png") && nameLower.endsWith(".png")) {
+                    return createIoSupplier(location, indexed);
+                } else if (path.endsWith(".ogg") && nameLower.endsWith(".ogg")) {
+                    return createIoSupplier(location, indexed);
+                } else if ((path.endsWith(".geo.json") || path.endsWith(".json")) && AzureResourceManager.isValidGeoModelFile(indexed)) {
+                    return createIoSupplier(location, indexed);
+                } else if (path.endsWith(".animation.json") && AzureResourceManager.isValidAnimationFile(indexed)) {
+                    return createIoSupplier(location, indexed);
+                }
             }
         }
 
@@ -96,16 +115,46 @@ public class AzureDynamicPackResources implements PackResources {
             }
         } else if (path.startsWith("textures/")) {
             File file = AzureResourceManager.findTextureFile(path);
-            if (file != null && file.exists() && file.getName().toLowerCase(java.util.Locale.ROOT).endsWith(".png")) {
+            if (file != null && file.exists() && file.getName().toLowerCase(Locale.ROOT).endsWith(".png")) {
                 return createIoSupplier(location, file);
             }
         } else if (path.startsWith("sounds/")) {
             File file = AzureResourceManager.findSoundFile(path);
-            if (file != null && file.exists() && file.getName().toLowerCase(java.util.Locale.ROOT).endsWith(".ogg")) {
+            if (file != null && file.exists() && file.getName().toLowerCase(Locale.ROOT).endsWith(".ogg")) {
                 return createIoSupplier(location, file);
             }
         }
 
+        return null;
+    }
+
+    @Nullable
+    private File findMcmetaFile(ResourceLocation location) {
+        // Direct index lookup if registered
+        File indexed = AzureResourceManager.getResourceIndex().get(location);
+        if (indexed != null && indexed.exists() && indexed.isFile() && indexed.getName().toLowerCase(Locale.ROOT).endsWith(".mcmeta")) {
+            return indexed;
+        }
+
+        String path = location.getPath();
+        String assetPath = path.substring(0, path.length() - 7); // Strip ".mcmeta"
+        File assetFile = null;
+        if (assetPath.startsWith("textures/")) {
+            assetFile = AzureResourceManager.findTextureFile(assetPath);
+        } else if (assetPath.startsWith("sounds/")) {
+            assetFile = AzureResourceManager.findSoundFile(assetPath);
+        }
+
+        if (assetFile != null && assetFile.exists() && assetFile.isFile()) {
+            File metaFile = new File(assetFile.getAbsolutePath() + ".mcmeta");
+            if (metaFile.exists() && metaFile.isFile()) {
+                return metaFile;
+            }
+            File metaFileAlt = new File(assetFile.getParentFile(), assetFile.getName() + ".mcmeta");
+            if (metaFileAlt.exists() && metaFileAlt.isFile()) {
+                return metaFileAlt;
+            }
+        }
         return null;
     }
 

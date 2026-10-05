@@ -137,6 +137,11 @@ public class AzureResourceManager {
         return Collections.unmodifiableMap(RESOURCE_INDEX);
     }
 
+    public static void registerDynamicResource(ResourceLocation location, File file) {
+        if (location == null || file == null || !file.exists()) return;
+        RESOURCE_INDEX.put(location, file);
+    }
+
     public static Set<String> getIndexedNamespaces() {
         return Collections.unmodifiableSet(INDEXED_NAMESPACES);
     }
@@ -317,7 +322,6 @@ public class AzureResourceManager {
                 indexResource(root.namespace, "models/" + cleanId, geoFile);
                 indexResource(root.namespace, cleanId + ".geo.json", geoFile);
                 indexResource(root.namespace, cleanId + ".json", geoFile);
-                indexResource(root.namespace, cleanId, geoFile);
 
                 if (!cleanName.equals(cleanId)) {
                     indexResource(root.namespace, "geo/" + cleanName + ".geo.json", geoFile);
@@ -328,7 +332,6 @@ public class AzureResourceManager {
                     indexResource(root.namespace, "models/" + cleanName, geoFile);
                     indexResource(root.namespace, cleanName + ".geo.json", geoFile);
                     indexResource(root.namespace, cleanName + ".json", geoFile);
-                    indexResource(root.namespace, cleanName, geoFile);
                     CACHED_MODELS.add(cleanName);
                     CACHED_MODELS.add(root.namespace + ":" + cleanName);
                 }
@@ -340,7 +343,6 @@ public class AzureResourceManager {
                     CACHED_MODELS.add(root.namespace + ":" + cleanId);
                     indexResource(root.namespace, "models/" + cleanId + ".java", javaFile);
                     indexResource(root.namespace, cleanId + ".java", javaFile);
-                    indexResource(root.namespace, cleanId, javaFile);
                 }
             }
 
@@ -428,7 +430,6 @@ public class AzureResourceManager {
 
                     indexResource(root.namespace, "geo/" + cleanRel, file);
                     indexResource(root.namespace, "models/" + cleanRel, file);
-                    indexResource(root.namespace, cleanRel, file);
 
                     indexResource(root.namespace, "geo/" + baseName + ".geo.json", file);
                     indexResource(root.namespace, "geo/" + baseName + ".json", file);
@@ -438,7 +439,6 @@ public class AzureResourceManager {
                     indexResource(root.namespace, "models/" + baseName, file);
                     indexResource(root.namespace, baseName + ".geo.json", file);
                     indexResource(root.namespace, baseName + ".json", file);
-                    indexResource(root.namespace, baseName, file);
 
                     if (cleanRel.endsWith(".geo.json")) {
                         String noGeo = cleanRel.substring(0, cleanRel.length() - 9);
@@ -446,7 +446,6 @@ public class AzureResourceManager {
                         indexResource(root.namespace, "models/" + noGeo + ".json", file);
                         indexResource(root.namespace, "geo/" + noGeo, file);
                         indexResource(root.namespace, "models/" + noGeo, file);
-                        indexResource(root.namespace, noGeo, file);
                     }
                 }
             } else if (lower.endsWith(".java")) {
@@ -461,10 +460,8 @@ public class AzureResourceManager {
                 CACHED_MODELS.add(root.namespace + ":" + cleanRel);
 
                 indexResource(root.namespace, "models/" + cleanRel, file);
-                indexResource(root.namespace, cleanRel, file);
                 indexResource(root.namespace, "models/" + baseName + ".java", file);
                 indexResource(root.namespace, baseName + ".java", file);
-                indexResource(root.namespace, baseName, file);
             }
         });
     }
@@ -554,7 +551,7 @@ public class AzureResourceManager {
     }
 
     public static File findModelFile(String rawInput) {
-        if (rawInput == null || rawInput.trim().isEmpty()) return null;
+        if (rawInput == null || rawInput.trim().isEmpty() || rawInput.toLowerCase(Locale.ROOT).endsWith(".mcmeta")) return null;
         String trimmed = rawInput.trim();
 
         // 1. Direct file path check on disk
@@ -642,7 +639,7 @@ public class AzureResourceManager {
     }
 
     public static File findJavaModelFile(String rawInput) {
-        if (rawInput == null || rawInput.trim().isEmpty()) return null;
+        if (rawInput == null || rawInput.trim().isEmpty() || rawInput.toLowerCase(Locale.ROOT).endsWith(".mcmeta")) return null;
         String trimmed = rawInput.trim();
 
         File directDiskFile = new File(trimmed);
@@ -674,7 +671,7 @@ public class AzureResourceManager {
     }
 
     public static File findAnimationFile(String rawInput) {
-        if (rawInput == null || rawInput.trim().isEmpty()) return null;
+        if (rawInput == null || rawInput.trim().isEmpty() || rawInput.toLowerCase(Locale.ROOT).endsWith(".mcmeta")) return null;
         String trimmed = rawInput.trim();
 
         // 1. Direct disk file check
@@ -755,7 +752,7 @@ public class AzureResourceManager {
     }
 
     public static File findTextureFile(String rawInput) {
-        if (rawInput == null || rawInput.trim().isEmpty()) return null;
+        if (rawInput == null || rawInput.trim().isEmpty() || rawInput.toLowerCase(Locale.ROOT).endsWith(".mcmeta")) return null;
         String trimmed = rawInput.trim();
 
         // 1. Direct disk file check
@@ -765,7 +762,7 @@ public class AzureResourceManager {
         }
 
         // 2. Direct exact and prefixed ResourceLocation index checks
-        String[] prefixes = {"", "textures/", "textures/were/", "textures/parts/", "textures/entity/"};
+        String[] prefixes = {"", "textures/", "textures/dynamic/", "textures/were/", "textures/parts/", "textures/entity/"};
         String[] suffixes = {"", ".png"};
 
         if (trimmed.contains(":")) {
@@ -822,7 +819,7 @@ public class AzureResourceManager {
     }
 
     public static File findSoundFile(String rawInput) {
-        if (rawInput == null || rawInput.trim().isEmpty()) return null;
+        if (rawInput == null || rawInput.trim().isEmpty() || rawInput.toLowerCase(Locale.ROOT).endsWith(".mcmeta")) return null;
         String trimmed = rawInput.trim();
 
         // 1. Direct disk file check
@@ -989,6 +986,7 @@ public class AzureResourceManager {
         else if (s.startsWith("geo/")) s = s.substring(4);
         else if (s.startsWith("models/")) s = s.substring(7);
         else if (s.startsWith("textures/entity/")) s = s.substring(16);
+        else if (s.startsWith("textures/dynamic/")) s = s.substring(17);
         else if (s.startsWith("textures/")) s = s.substring(9);
         else if (s.startsWith("sounds/")) s = s.substring(7);
 
@@ -1001,6 +999,8 @@ public class AzureResourceManager {
         } else if (lower.endsWith(".json")) {
             s = s.substring(0, s.length() - 5);
         } else if (lower.endsWith(".png")) {
+            s = s.substring(0, s.length() - 4);
+        } else if (lower.endsWith("_png")) {
             s = s.substring(0, s.length() - 4);
         } else if (lower.endsWith(".ogg")) {
             s = s.substring(0, s.length() - 4);
@@ -1032,6 +1032,7 @@ public class AzureResourceManager {
         String lower = filename.toLowerCase(Locale.ROOT);
         if (lower.endsWith(".animation.json")) return filename.substring(0, filename.length() - 15);
         if (lower.endsWith(".geo.json")) return filename.substring(0, filename.length() - 9);
+        if (lower.endsWith("_png")) return filename.substring(0, filename.length() - 4);
         int idx = filename.lastIndexOf('.');
         return idx > 0 ? filename.substring(0, idx) : filename;
     }
