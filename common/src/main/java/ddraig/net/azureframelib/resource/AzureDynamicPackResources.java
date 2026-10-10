@@ -1,7 +1,14 @@
 package ddraig.net.azureframelib.resource;
 
+import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import com.google.gson.stream.JsonReader;
 import ddraig.net.azureframelib.AzureFrameLib;
+import ddraig.net.azureframelib.config.AzureFrameLibConfig;
+import ddraig.net.azureframelib.model.ModelHitboxHelper;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.PackResources;
@@ -11,26 +18,29 @@ import net.minecraft.server.packs.metadata.pack.PackMetadataSection;
 import net.minecraft.server.packs.resources.IoSupplier;
 import org.jetbrains.annotations.Nullable;
 
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.*;
 
 /**
  * Dynamic in-game client resource pack.
  * Streams models, animations, textures, and sounds directly from all registered
  * framework config directories into Minecraft's client resource engine.
+ * <p>
+ * All lookups come from AzureFrameLib's in-memory index; files are only opened when
+ * Minecraft actually reads them.
  */
 public class AzureDynamicPackResources implements PackResources {
     public static final String PACK_ID = "azureframelib_dynamic";
-    private static final Set<String> SUPPORTED_NAMESPACES = Set.of(
-            "azureframelib",
-            "custom_mobs",
-            "rpg_mounts",
-            "customraces"
-    );
+    private static final Set<String> SUPPORTED_NAMESPACES = AzureResourceManager.SUPPORTED_NAMESPACES;
+    private static final Gson GSON = new Gson();
+    private static final byte[] EMPTY_ANIMATIONS = "{\"format_version\":\"1.8.0\",\"animations\":{}}".getBytes(StandardCharsets.UTF_8);
 
     @Nullable
     @Override
@@ -52,10 +62,11 @@ public class AzureDynamicPackResources implements PackResources {
 
         String path = location.getPath();
 
-        // 0. Metadata (.mcmeta) requests: NEVER return a .png or other binary/model file for metadata requests
+        // 0. Metadata (.mcmeta) requests: NEVER return a .png or other binary/model file for metadata requests.
+        //    Only real .mcmeta files found during the scan are served.
         if (path.endsWith(".mcmeta")) {
-            File metaFile = findMcmetaFile(location);
-            if (metaFile != null && metaFile.exists() && metaFile.isFile() && metaFile.getName().toLowerCase(Locale.ROOT).endsWith(".mcmeta")) {
+            File metaFile = AzureResourceManager.indexedFile(AzureResourceManager.snapshotForResourceLoading(), location);
+            if (metaFile != null && metaFile.getName().toLowerCase(Locale.ROOT).endsWith(".mcmeta")) {
                 return () -> new FileInputStream(metaFile);
             }
             return null;
@@ -68,111 +79,125 @@ public class AzureDynamicPackResources implements PackResources {
             return () -> new java.io.ByteArrayInputStream(bytes);
         }
 
-        // 2. High-speed exact index lookup
-        File indexed = AzureResourceManager.getResourceIndex().get(location);
-        if (indexed != null && indexed.exists() && indexed.isFile()) {
-            String nameLower = indexed.getName().toLowerCase(Locale.ROOT);
-            if (path.startsWith("geo/") || path.startsWith("models/")) {
-                if (AzureResourceManager.isValidGeoModelFile(indexed)) {
-                    return createIoSupplier(location, indexed);
-                }
-            } else if (path.startsWith("animations/")) {
-                if (AzureResourceManager.isValidAnimationFile(indexed)) {
-                    return createIoSupplier(location, indexed);
-                }
-            } else if (path.startsWith("textures/")) {
-                if (nameLower.endsWith(".png")) {
-                    return createIoSupplier(location, indexed);
-                }
-            } else if (path.startsWith("sounds/")) {
-                if (nameLower.endsWith(".ogg")) {
-                    return createIoSupplier(location, indexed);
-                }
-            } else {
-                // Non-standard path: strictly verify requested extension matches file extension
-                if (path.endsWith(".png") && nameLower.endsWith(".png")) {
-                    return createIoSupplier(location, indexed);
-                } else if (path.endsWith(".ogg") && nameLower.endsWith(".ogg")) {
-                    return createIoSupplier(location, indexed);
-                } else if ((path.endsWith(".geo.json") || path.endsWith(".json")) && AzureResourceManager.isValidGeoModelFile(indexed)) {
-                    return createIoSupplier(location, indexed);
-                } else if (path.endsWith(".animation.json") && AzureResourceManager.isValidAnimationFile(indexed)) {
-                    return createIoSupplier(location, indexed);
-                }
-            }
+        // 2. High-speed exact index lookup (memory only)
+        AssetSnapshot snapshot = AzureResourceManager.snapshotForResourceLoading();
+        File indexed = AzureResourceManager.indexedFile(snapshot, location);
+        if (indexed != null) {
+            IoSupplier<InputStream> supplier = createIoSupplier(snapshot, location, indexed);
+            if (supplier != null) return supplier;
         }
 
-        // 3. Fallback category search
-        if (path.startsWith("geo/") || path.startsWith("models/")) {
-            File file = AzureResourceManager.findModelFile(path);
-            if (file != null && file.exists() && AzureResourceManager.isValidGeoModelFile(file)) {
-                return createIoSupplier(location, file);
-            }
-        } else if (path.startsWith("animations/")) {
-            File file = AzureResourceManager.findAnimationFile(path);
-            if (file != null && file.exists() && AzureResourceManager.isValidAnimationFile(file)) {
-                return createIoSupplier(location, file);
-            }
-        } else if (path.startsWith("textures/")) {
-            File file = AzureResourceManager.findTextureFile(path);
-            if (file != null && file.exists() && file.getName().toLowerCase(Locale.ROOT).endsWith(".png")) {
-                return createIoSupplier(location, file);
-            }
-        } else if (path.startsWith("sounds/")) {
-            File file = AzureResourceManager.findSoundFile(path);
-            if (file != null && file.exists() && file.getName().toLowerCase(Locale.ROOT).endsWith(".ogg")) {
-                return createIoSupplier(location, file);
+        // 3. Fallback name search by category (memory only)
+        AssetSnapshot.Type category = null;
+        if (path.startsWith("geo/") || path.startsWith("models/")) category = AssetSnapshot.Type.MODEL;
+        else if (path.startsWith("animations/")) category = AssetSnapshot.Type.ANIMATION;
+        else if (path.startsWith("textures/")) category = AssetSnapshot.Type.TEXTURE;
+        else if (path.startsWith("sounds/")) category = AssetSnapshot.Type.SOUND;
+        if (category != null) {
+            ResourceLocation canon = AzureAssetIndex.resolve(snapshot, category, location.toString());
+            File file = canon != null ? AzureResourceManager.indexedFile(snapshot, canon) : null;
+            if (file != null) {
+                return createIoSupplier(snapshot, location, file);
             }
         }
 
         return null;
     }
 
+    /**
+     * Builds the stream for one file, or null if the file doesn't fit the requested path
+     * (for example a model file asked for under a .png name).
+     */
     @Nullable
-    private File findMcmetaFile(ResourceLocation location) {
-        // Direct index lookup if registered
-        File indexed = AzureResourceManager.getResourceIndex().get(location);
-        if (indexed != null && indexed.exists() && indexed.isFile() && indexed.getName().toLowerCase(Locale.ROOT).endsWith(".mcmeta")) {
-            return indexed;
-        }
-
+    private IoSupplier<InputStream> createIoSupplier(AssetSnapshot snapshot, ResourceLocation location, File file) {
         String path = location.getPath();
-        String assetPath = path.substring(0, path.length() - 7); // Strip ".mcmeta"
-        File assetFile = null;
-        if (assetPath.startsWith("textures/")) {
-            assetFile = AzureResourceManager.findTextureFile(assetPath);
-        } else if (assetPath.startsWith("sounds/")) {
-            assetFile = AzureResourceManager.findSoundFile(assetPath);
-        }
+        String nameLower = file.getName().toLowerCase(Locale.ROOT);
+        boolean binaryPath = path.endsWith(".png") || path.endsWith(".ogg") || path.endsWith(".java") || path.endsWith(".mcmeta");
 
-        if (assetFile != null && assetFile.exists() && assetFile.isFile()) {
-            File metaFile = new File(assetFile.getAbsolutePath() + ".mcmeta");
-            if (metaFile.exists() && metaFile.isFile()) {
-                return metaFile;
-            }
-            File metaFileAlt = new File(assetFile.getParentFile(), assetFile.getName() + ".mcmeta");
-            if (metaFileAlt.exists() && metaFileAlt.isFile()) {
-                return metaFileAlt;
-            }
+        if (snapshot.files(AssetSnapshot.Type.MODEL).contains(file)) {
+            return binaryPath ? null : modelSupplier(snapshot, location, file);
+        }
+        if (snapshot.files(AssetSnapshot.Type.ANIMATION).contains(file)) {
+            return binaryPath ? null : animationSupplier(snapshot, file);
+        }
+        if (nameLower.endsWith(".png")) {
+            return path.endsWith(".png") || (path.startsWith("textures/") && !path.endsWith(".json")) ? rawSupplier(file) : null;
+        }
+        if (nameLower.endsWith(".ogg")) {
+            return path.endsWith(".ogg") || (path.startsWith("sounds/") && !path.endsWith(".json")) ? rawSupplier(file) : null;
+        }
+        if (nameLower.endsWith(".java")) {
+            return path.endsWith(".java") ? rawSupplier(file) : null;
+        }
+        if (nameLower.endsWith(".mcmeta")) {
+            return path.endsWith(".mcmeta") ? rawSupplier(file) : null;
+        }
+        if (nameLower.endsWith(".json") && !binaryPath && AzureResourceManager.isDynamicResource(location)) {
+            return rawSupplier(file);
         }
         return null;
     }
 
-    private IoSupplier<InputStream> createIoSupplier(ResourceLocation location, File file) {
-        String path = location.getPath();
-        if (path.startsWith("animations/")) {
-            if (file.length() == 0 || !AzureResourceManager.isValidAnimationFile(file)) {
-                byte[] fallback = "{\"format_version\":\"1.8.0\",\"animations\":{}}".getBytes(StandardCharsets.UTF_8);
-                return () -> new java.io.ByteArrayInputStream(fallback);
-            }
-        } else if (path.startsWith("geo/") || path.startsWith("models/")) {
-            if (file.length() == 0 || !AzureResourceManager.isValidGeoModelFile(file)) {
-                AzureFrameLib.LOGGER.warn("[AzureFrameLib] Model file {} ({}) is missing valid GeckoLib geometry. Serving safe empty model fallback.", location, file.getAbsolutePath());
-                byte[] fallback = AzureResourceManager.getEmptyGeoModelFallbackBytes(location);
-                return () -> new java.io.ByteArrayInputStream(fallback);
-            }
-        }
+    private static IoSupplier<InputStream> rawSupplier(File file) {
         return () -> new FileInputStream(file);
+    }
+
+    /**
+     * GeckoLib loads every model in one batch, and one file it can't read stops ALL GeckoLib models
+     * from loading. So models are checked again when opened (only re-read if the file changed), and
+     * anything unusable is replaced by a tiny empty model instead.
+     */
+    private static IoSupplier<InputStream> modelSupplier(AssetSnapshot snapshot, ResourceLocation location, File file) {
+        return () -> {
+            try {
+                AssetFileCache.Info info = AzureResourceManager.FILE_CACHE.get(file);
+                if (info == null || info.kind != AssetFileCache.Kind.MODEL) {
+                    AzureFrameLib.LOGGER.warn("[AzureFrameLib] Model file \"{}\" changed and can no longer be used{}. An empty model is used instead until it is fixed.",
+                            file.getName(), info != null && info.problem != null ? " (" + info.problem + ")" : "");
+                    return new ByteArrayInputStream(AzureResourceManager.getEmptyGeoModelFallbackBytes(location));
+                }
+                boolean strip = info.hasHitboxCubes && AzureFrameLibConfig.get().hideHitboxBones;
+                if (!strip && !info.needsCleanup) {
+                    return new FileInputStream(file);
+                }
+                JsonObject root = readLenient(file);
+                if (strip) ModelHitboxHelper.stripHitboxCubes(root);
+                return new ByteArrayInputStream(GSON.toJson(root).getBytes(StandardCharsets.UTF_8));
+            } catch (Throwable t) {
+                AzureFrameLib.LOGGER.warn("[AzureFrameLib] Could not read model file \"{}\" ({}). An empty model is used instead.", file.getName(), t.toString());
+                return new ByteArrayInputStream(AzureResourceManager.getEmptyGeoModelFallbackBytes(location));
+            }
+        };
+    }
+
+    private static IoSupplier<InputStream> animationSupplier(AssetSnapshot snapshot, File file) {
+        return () -> {
+            try {
+                AssetFileCache.Info info = AzureResourceManager.FILE_CACHE.get(file);
+                if (info == null || info.kind != AssetFileCache.Kind.ANIMATION) {
+                    AzureFrameLib.LOGGER.warn("[AzureFrameLib] Animation file \"{}\" changed and can no longer be used{}. It is skipped until it is fixed.",
+                            file.getName(), info != null && info.problem != null ? " (" + info.problem + ")" : "");
+                    return new ByteArrayInputStream(EMPTY_ANIMATIONS);
+                }
+                if (!info.needsCleanup) {
+                    return new FileInputStream(file);
+                }
+                return new ByteArrayInputStream(GSON.toJson(readLenient(file)).getBytes(StandardCharsets.UTF_8));
+            } catch (Throwable t) {
+                AzureFrameLib.LOGGER.warn("[AzureFrameLib] Could not read animation file \"{}\" ({}). It is skipped.", file.getName(), t.toString());
+                return new ByteArrayInputStream(EMPTY_ANIMATIONS);
+            }
+        };
+    }
+
+    private static JsonObject readLenient(File file) throws IOException {
+        String content = new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
+        if (!content.isEmpty() && content.charAt(0) == '\uFEFF') content = content.substring(1);
+        JsonReader reader = new JsonReader(new StringReader(content));
+        reader.setLenient(true);
+        JsonElement el = JsonParser.parseReader(reader);
+        if (!el.isJsonObject()) throw new IOException("not a JSON object");
+        return el.getAsJsonObject();
     }
 
     @Override
@@ -182,17 +207,28 @@ public class AzureDynamicPackResources implements PackResources {
         }
 
         String prefix = path.endsWith("/") ? path : path + "/";
-        for (Map.Entry<ResourceLocation, File> entry : AzureResourceManager.getResourceIndex().entrySet()) {
-            ResourceLocation loc = entry.getKey();
-            if (!loc.getNamespace().equalsIgnoreCase(namespace)) {
-                continue;
-            }
-            if (loc.getPath().startsWith(prefix)) {
-                File file = entry.getValue();
-                if (file != null && file.exists()) {
-                    output.accept(loc, createIoSupplier(loc, file));
+        AssetSnapshot snapshot = AzureResourceManager.snapshotForResourceLoading();
+        Set<String> listed = new HashSet<>();
+        NavigableMap<String, File> byPath = snapshot.byNamespace.get(namespace.toLowerCase(Locale.ROOT));
+        if (byPath != null) {
+            for (Map.Entry<String, File> entry : byPath.subMap(prefix, true, prefix + '\uffff', false).entrySet()) {
+                ResourceLocation loc = ResourceLocation.tryBuild(namespace, entry.getKey());
+                if (loc == null) continue;
+                IoSupplier<InputStream> supplier = createIoSupplier(snapshot, loc, entry.getValue());
+                if (supplier != null) {
+                    listed.add(entry.getKey());
+                    output.accept(loc, supplier);
                 }
             }
+        }
+        // Resources registered at runtime
+        for (Map.Entry<ResourceLocation, File> entry : AzureResourceManager.dynamicResources().entrySet()) {
+            ResourceLocation loc = entry.getKey();
+            if (!loc.getNamespace().equalsIgnoreCase(namespace) || !loc.getPath().startsWith(prefix) || listed.contains(loc.getPath())) {
+                continue;
+            }
+            IoSupplier<InputStream> supplier = createIoSupplier(snapshot, loc, entry.getValue());
+            if (supplier != null) output.accept(loc, supplier);
         }
     }
 
@@ -252,11 +288,9 @@ public class AzureDynamicPackResources implements PackResources {
     @Override
     public Set<String> getNamespaces(PackType type) {
         if (type == PackType.CLIENT_RESOURCES) {
+            // Never waits for the index: Minecraft calls this on the main thread while starting a reload.
             Set<String> namespaces = new HashSet<>(SUPPORTED_NAMESPACES);
-            namespaces.addAll(AzureResourceManager.getIndexedNamespaces());
-            for (AzureResourceManager.ResourceRoot r : AzureResourceManager.getRoots()) {
-                namespaces.add(r.namespace.toLowerCase(Locale.ROOT));
-            }
+            namespaces.addAll(AzureResourceManager.managedNamespaces());
             return Collections.unmodifiableSet(namespaces);
         }
         return Collections.emptySet();
@@ -287,11 +321,6 @@ public class AzureDynamicPackResources implements PackResources {
     private boolean isSupportedNamespace(String namespace) {
         if (namespace == null) return false;
         String lower = namespace.toLowerCase(Locale.ROOT);
-        if (SUPPORTED_NAMESPACES.contains(lower)) return true;
-        if (AzureResourceManager.getIndexedNamespaces().contains(lower)) return true;
-        for (AzureResourceManager.ResourceRoot r : AzureResourceManager.getRoots()) {
-            if (r.namespace.equalsIgnoreCase(lower)) return true;
-        }
-        return false;
+        return SUPPORTED_NAMESPACES.contains(lower) || AzureResourceManager.managedNamespaces().contains(lower);
     }
 }

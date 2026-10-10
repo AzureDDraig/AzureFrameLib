@@ -5,6 +5,7 @@ plugins {
 loom {
     forge {
         mixinConfig "azureframelib.mixins.json"
+        mixinConfig "azureframelib.geckolib.mixins.json"
     }
 }
 

@@ -22,6 +22,9 @@ dependencies {
 
     embedLib "org.xerial:sqlite-jdbc:3.43.0.0"
     compileOnly "org.xerial:sqlite-jdbc:3.43.0.0"
+
+    // GeckoLib: only needed to compile the optional GeckoLib fixes. Not bundled, not required at runtime.
+    modCompileOnly("software.bernie.geckolib:geckolib-fabric-1.20.1:${rootProject.geckolib_version}") { transitive = false }
 }
 
 processResources {
