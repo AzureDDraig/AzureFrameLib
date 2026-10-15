@@ -91,10 +91,10 @@ public class TeleportHelper {
 
     public static boolean teleportDirect(ServerPlayer player, double targetX, double targetY, double targetZ, String targetDimension) {
         if (player == null) return false;
-        MinecraftServer server = player.getServer();
+        ServerLevel targetLevel = ddraig.net.azureframelib.platform.VersionBridge.getServerLevel(player);
+        if (targetLevel == null) return false;
+        MinecraftServer server = targetLevel.getServer();
         if (server == null) return false;
-
-        ServerLevel targetLevel = player.serverLevel();
         if (targetDimension != null && !targetDimension.isEmpty()) {
             ResourceLocation dimLoc = ResourceLocation.tryParse(targetDimension);
             if (dimLoc != null) {
@@ -108,9 +108,9 @@ public class TeleportHelper {
 
         try {
             // Spawn departure particles and sound
-            playTeleportEffects(player.serverLevel(), player.getX(), player.getY(), player.getZ());
+            playTeleportEffects(ddraig.net.azureframelib.platform.VersionBridge.getServerLevel(player), player.getX(), player.getY(), player.getZ());
 
-            player.teleportTo(targetLevel, targetX, targetY, targetZ, player.getYRot(), player.getXRot());
+            ddraig.net.azureframelib.platform.VersionBridge.teleportPlayer(player, targetLevel, targetX, targetY, targetZ, player.getYRot(), player.getXRot());
 
             // Spawn arrival particles and sound
             playTeleportEffects(targetLevel, targetX, targetY, targetZ);

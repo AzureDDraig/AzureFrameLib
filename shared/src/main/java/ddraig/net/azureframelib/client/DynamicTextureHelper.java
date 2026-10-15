@@ -113,7 +113,7 @@ public class DynamicTextureHelper {
 
             try (InputStream is = new FileInputStream(file)) {
                 NativeImage nativeImage = NativeImage.read(is);
-                DynamicTexture dynamicTexture = new DynamicTexture(nativeImage);
+                DynamicTexture dynamicTexture = ddraig.net.azureframelib.platform.VersionBridge.createDynamicTexture("azureframelib_dyn_" + file.getName(), nativeImage);
 
                 // Build clean ID for the texture, ensuring it explicitly ends with .png
                 String baseName = AzureResourceManager.stripExtension(file.getName());

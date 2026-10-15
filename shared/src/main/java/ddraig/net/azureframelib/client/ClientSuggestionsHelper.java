@@ -186,7 +186,7 @@ public class ClientSuggestionsHelper {
         try {
             Minecraft mc = Minecraft.getInstance();
             if (mc != null && mc.level != null) {
-                var regOpt = mc.level.registryAccess().registry(Registries.BIOME);
+                var regOpt = ddraig.net.azureframelib.platform.VersionBridge.getRegistry(mc.level.registryAccess(), Registries.BIOME);
                 if (regOpt.isPresent()) {
                     for (ResourceLocation loc : regOpt.get().keySet()) {
                         set.add(loc.toString());
@@ -208,7 +208,7 @@ public class ClientSuggestionsHelper {
         try {
             Minecraft mc = Minecraft.getInstance();
             if (mc != null && mc.level != null) {
-                var regOpt = mc.level.registryAccess().registry(Registries.DIMENSION_TYPE);
+                var regOpt = ddraig.net.azureframelib.platform.VersionBridge.getRegistry(mc.level.registryAccess(), Registries.DIMENSION_TYPE);
                 if (regOpt.isPresent()) {
                     for (ResourceLocation loc : regOpt.get().keySet()) {
                         set.add(loc.toString());

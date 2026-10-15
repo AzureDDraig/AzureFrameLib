@@ -48,7 +48,7 @@ public class CustomIconHelper {
 
     private static void registerImage(String name, NativeImage image) {
         String clean = name.toLowerCase(Locale.ROOT).replace(' ', '_');
-        DynamicTexture normalTexture = new DynamicTexture(image);
+        DynamicTexture normalTexture = ddraig.net.azureframelib.platform.VersionBridge.createDynamicTexture("azureframelib_icon_" + clean, image);
         ResourceLocation normalLoc = ResourceLocation.tryBuild(AzureFrameLib.MOD_ID, "dynamic/icons/" + clean);
 
         // Generate greyscale silhouette
@@ -57,7 +57,7 @@ public class CustomIconHelper {
         NativeImage silhouette = new NativeImage(w, h, false);
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
-                int abgr = image.getPixelRGBA(x, y);
+                int abgr = ddraig.net.azureframelib.platform.VersionBridge.getPixelABGR(image, x, y);
                 int a = (abgr >> 24) & 0xFF;
                 if (a > 0) {
                     int b = (abgr >> 16) & 0xFF;
@@ -66,13 +66,13 @@ public class CustomIconHelper {
                     int gray = (int) (0.299 * r + 0.587 * g + 0.114 * b);
                     gray = Math.max(0, Math.min(255, gray / 2 + 30));
                     int newColor = (a << 24) | (gray << 16) | (gray << 8) | gray;
-                    silhouette.setPixelRGBA(x, y, newColor);
+                    ddraig.net.azureframelib.platform.VersionBridge.setPixelABGR(silhouette, x, y, newColor);
                 } else {
-                    silhouette.setPixelRGBA(x, y, 0);
+                    ddraig.net.azureframelib.platform.VersionBridge.setPixelABGR(silhouette, x, y, 0);
                 }
             }
         }
-        DynamicTexture silTexture = new DynamicTexture(silhouette);
+        DynamicTexture silTexture = ddraig.net.azureframelib.platform.VersionBridge.createDynamicTexture("azureframelib_icon_sil_" + clean, silhouette);
         ResourceLocation silLoc = ResourceLocation.tryBuild(AzureFrameLib.MOD_ID, "dynamic/icons/" + clean + "_silhouette");
         if (normalLoc == null || silLoc == null) return;
 

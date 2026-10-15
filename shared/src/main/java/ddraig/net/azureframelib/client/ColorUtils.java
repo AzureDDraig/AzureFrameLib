@@ -75,7 +75,7 @@ public class ColorUtils {
 
         for (int x = 0; x < width; x += stepX) {
             for (int y = 0; y < height; y += stepY) {
-                int pixel = img.getPixelRGBA(x, y);
+                int pixel = ddraig.net.azureframelib.platform.VersionBridge.getPixelABGR(img, x, y);
                 int a = (pixel >> 24) & 0xFF;
                 if (a > 32) { // ignore transparent pixels
                     int r = pixel & 0xFF;
