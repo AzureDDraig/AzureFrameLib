@@ -2,9 +2,19 @@ architectury {
     common rootProject.enabled_platforms.split(',')
 }
 
+sourceSets {
+    main {
+        java {
+            srcDir "../../shared/src/main/java"
+        }
+        resources {
+            srcDir "../../shared/src/main/resources"
+        }
+    }
+}
+
 repositories {
     mavenCentral()
-    maven { url 'https://dl.cloudsmith.io/public/geckolib3/geckolib/maven/' }
 }
 
 configurations {
@@ -17,14 +27,11 @@ dependencies {
     // Do NOT use other classes from Fabric Loader.
     modImplementation "net.fabricmc:fabric-loader:$rootProject.fabric_loader_version"
 
-    // Architectury API. This is optional, and you can comment it out if you don't need it.
+    // Architectury API.
     modImplementation "dev.architectury:architectury:$rootProject.architectury_api_version"
 
     embedLib "org.xerial:sqlite-jdbc:3.43.0.0"
     compileOnly "org.xerial:sqlite-jdbc:3.43.0.0"
-
-    // GeckoLib: only needed to compile the optional GeckoLib fixes. Not bundled, not required at runtime.
-    modCompileOnly("software.bernie.geckolib:geckolib-fabric-1.20.1:${rootProject.geckolib_version}") { transitive = false }
 }
 
 processResources {
@@ -37,5 +44,3 @@ task devJar(type: Jar) {
     archiveClassifier = 'dev'
     from sourceSets.main.output
 }
-
-

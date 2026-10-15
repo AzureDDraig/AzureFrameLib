@@ -2,6 +2,17 @@ architectury {
     common rootProject.enabled_platforms.split(',')
 }
 
+sourceSets {
+    main {
+        java {
+            srcDir "../../shared/src/main/java"
+        }
+        resources {
+            srcDir "../../shared/src/main/resources"
+        }
+    }
+}
+
 repositories {
     mavenCentral()
 }
