@@ -2,36 +2,6 @@ architectury {
     common rootProject.enabled_platforms.split(',')
 }
 
-def generatedSharedJavaDir = layout.buildDirectory.dir("generated/shared-java")
-
-tasks.register("prepareSharedSources", Sync) {
-    from("../../shared/src/main/java")
-    into(generatedSharedJavaDir)
-    filter { String line ->
-        line.replace("net.minecraft.resources.ResourceLocation", "net.minecraft.resources.Identifier")
-            .replaceAll("\\bResourceLocation\\b", "Identifier")
-    }
-}
-
-sourceSets {
-    main {
-        java {
-            srcDir generatedSharedJavaDir
-        }
-        resources {
-            srcDir "../../shared/src/main/resources"
-        }
-    }
-}
-
-tasks.named("compileJava") {
-    dependsOn("prepareSharedSources")
-}
-
-tasks.matching { it.name == "sourcesJar" }.configureEach {
-    dependsOn("prepareSharedSources")
-}
-
 repositories {
     mavenCentral()
 }
