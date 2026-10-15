@@ -1,0 +1,35 @@
+architectury {
+    common rootProject.enabled_platforms.split(',')
+}
+
+repositories {
+    mavenCentral()
+}
+
+configurations {
+    embedLib
+}
+
+dependencies {
+    // We depend on Fabric Loader here to use the Fabric @Environment annotations,
+    // which get remapped to the correct annotations on each platform.
+    // Do NOT use other classes from Fabric Loader.
+    modImplementation "net.fabricmc:fabric-loader:$rootProject.fabric_loader_version"
+
+    // Architectury API.
+    modImplementation "dev.architectury:architectury:$rootProject.architectury_api_version"
+
+    embedLib "org.xerial:sqlite-jdbc:3.43.0.0"
+    compileOnly "org.xerial:sqlite-jdbc:3.43.0.0"
+}
+
+processResources {
+    from(configurations.embedLib) {
+        into "azureframelib/lib"
+    }
+}
+
+task devJar(type: Jar) {
+    archiveClassifier = 'dev'
+    from sourceSets.main.output
+}

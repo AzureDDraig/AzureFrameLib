@@ -1,0 +1,39 @@
+modLoader = "javafml"
+loaderVersion = "[2,)"
+license = "MIT"
+
+[[mods]]
+modId = "azureframelib"
+version = "${version}"
+displayName = "AzureFrameLib"
+authors = "Azureddraig"
+description = '''
+Shared library and dynamic resource framework for Minecraft mods.
+'''
+
+[[mixins]]
+config = "azureframelib.mixins.json"
+
+[[mixins]]
+config = "azureframelib.geckolib.mixins.json"
+
+[[dependencies.azureframelib]]
+modId = "neoforge"
+type = "required"
+versionRange = "[26.1,)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.azureframelib]]
+modId = "minecraft"
+type = "required"
+versionRange = "[26.1,)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.azureframelib]]
+modId = "architectury"
+type = "required"
+versionRange = "[19.0.1,)"
+ordering = "AFTER"
+side = "BOTH"

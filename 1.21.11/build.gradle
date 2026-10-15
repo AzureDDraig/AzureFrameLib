@@ -1,0 +1,127 @@
+plugins {
+    id 'dev.architectury.loom' version '1.17.477' apply false
+    id 'architectury-plugin' version '3.5.168'
+    id 'com.gradleup.shadow' version '8.3.6' apply false
+}
+
+def buildNumberFile = file("../build_number.txt").exists() ? file("../build_number.txt") : file("build_number.txt")
+if (!buildNumberFile.exists()) {
+    buildNumberFile.text = "001"
+}
+def buildNumber = buildNumberFile.text.trim().toInteger()
+def buildNumberStr = String.format("%03d", buildNumber)
+
+ext {
+    buildNumberVal = buildNumber
+    buildNumberStrVal = buildNumberStr
+}
+
+// Workaround for Loom configuration phase requiring project dependency JARs to exist before compile
+def buildVer = "${project.mod_version}-b${buildNumberStr}${project.mod_tag}"
+["common"].each { projDirName ->
+    def libsDir = file("${projDirName}/build/libs")
+    def targetJar = file("${projDirName}/build/libs/${project.archives_name}-${projDirName}-${project.minecraft_version}-${buildVer}.jar")
+    if (!targetJar.exists()) {
+        libsDir.mkdirs()
+        def lastJar = libsDir.listFiles()?.findAll { 
+            it.name.endsWith(".jar") && 
+            !it.name.contains("sources") && 
+            !it.name.contains("transform") &&
+            it.name != targetJar.name 
+        }?.sort { it.lastModified() }
+        if (lastJar && !lastJar.isEmpty()) {
+            def sourceJar = lastJar.last()
+            println "Copying ${sourceJar.name} to ${targetJar.name} for Loom configuration..."
+            targetJar.bytes = sourceJar.bytes
+        } else if (file("gradle/wrapper/gradle-wrapper.jar").exists()) {
+            targetJar.bytes = file("gradle/wrapper/gradle-wrapper.jar").bytes
+        }
+    }
+}
+
+tasks.register("incrementBuildNumber") {
+    doLast {
+        // Check if any task in the execution graph failed
+        boolean anyFailure = false
+        gradle.taskGraph.allTasks.each { task ->
+            if (task.state.failure != null) {
+                anyFailure = true
+            }
+        }
+        if (!anyFailure) {
+            def nextBuildNumber = buildNumber + 1
+            buildNumberFile.text = String.format("%03d", nextBuildNumber)
+            println "Incremented build number to ${String.format('%03d', nextBuildNumber)}"
+        } else {
+            println "Build failed or had task failures. Build number not incremented."
+        }
+    }
+}
+
+architectury {
+    minecraft = project.minecraft_version
+}
+
+allprojects {
+    group = rootProject.maven_group
+    version = "${rootProject.mod_version}-b${buildNumberStr}${rootProject.mod_tag}"
+}
+
+subprojects {
+    apply plugin: 'dev.architectury.loom'
+    apply plugin: 'architectury-plugin'
+    apply plugin: 'maven-publish'
+
+    base {
+        archivesName = "${rootProject.archives_name}-${project.name}-${rootProject.minecraft_version}"
+    }
+
+    repositories {
+        maven { url "https://maven.neoforged.net/releases" }
+        maven { url "https://maven.architectury.dev/" }
+    }
+
+    loom {
+        silentMojangMappingsLicense()
+    }
+
+    dependencies {
+        minecraft "net.minecraft:minecraft:$rootProject.minecraft_version"
+        mappings loom.officialMojangMappings()
+    }
+
+    java {
+        withSourcesJar()
+
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
+    }
+
+    tasks.withType(JavaCompile).configureEach {
+        it.options.release = 21
+    }
+
+    publishing {
+        publications {
+            mavenJava(MavenPublication) {
+                artifactId = base.archivesName.get()
+                from components.java
+            }
+        }
+
+        repositories {
+        }
+    }
+}
+
+tasks.register("deployToDev") {
+    dependsOn subprojects.collect { it.tasks.matching { t -> t.name == "deployToDev" } }
+}
+
+allprojects {
+    tasks.configureEach { task ->
+        if (task.name == "deployToDev") {
+            task.finalizedBy(rootProject.tasks.named("incrementBuildNumber"))
+        }
+    }
+}
