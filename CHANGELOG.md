@@ -1,5 +1,13 @@
 # AzureFrameLib Changelog
 
+## 1.1.0-b010a
+
+**Major RAM & FPS Fix (~1.75 GB Less RAM Used)**
+- **On-Demand Model & Animation Loading:** Fixed a major memory leak where GeckoLib was given thousands of duplicate model and animation path aliases at startup and pre-baked all of them into RAM at once (~33,000 baked copies taking ~1.75 GB of permanent RAM in large modpacks). Models and animations from `AzureFrameLib` config folders are now baked on demand only when an entity or screen actually uses them, and each file on disk is baked at most once.
+- **No Startup JSON Parsing Flood:** Indexing `.geo.json` and `.animation.json` files at startup now classifies them by filename instead of reading and parsing all 4,600+ JSON files into memory upfront. File contents (hitboxes, animation names) are read lazily only when needed.
+- **Eliminated Render-Thread Disk Crawls:** Fixed gameplay FPS stutters caused by `findModelFile`, `findTextureFile`, `findAnimationFile`, and `findSoundFile` falling back to recursive hard-drive folder searches on the Render thread whenever a missing or Java model name was checked. Once the index is ready, misses are cached in memory with zero disk access.
+- **Faster Texture & Sound Handling:** Cached `DynamicTextureHelper` lookups before resource stream checks so `namespace:path.png` textures don't re-open files every frame, cached baked `JavaModelLoader` models, and pre-built `sounds.json` in memory during indexing instead of rescanning folders during resource reloads.
+
 ## 1.1.0
 
 **Faster**

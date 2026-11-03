@@ -27,8 +27,10 @@ public final class AssetSnapshot {
 
     /** Every ResourceLocation (including aliases) the dynamic pack can serve, mapped to its file. */
     final Map<ResourceLocation, File> index;
-    /** The same entries grouped by namespace and sorted by path, for fast folder listing. */
-    final Map<String, NavigableMap<String, File>> byNamespace;
+    /** Canonical sound (.ogg) entries grouped by namespace and sorted by path, for SoundManager folder listing. */
+    final Map<String, NavigableMap<String, File>> soundsByNamespace;
+    /** Pre-built sounds.json payload for all indexed sounds, so resource reloads never walk the disk. */
+    final byte[] soundsJsonBytes;
     final Set<String> namespaces;
 
     final Set<String> discoveredModels;
@@ -58,9 +60,12 @@ public final class AssetSnapshot {
     /** Old-style file searches that found nothing (also on disk): input to the time of the miss. */
     final Map<Type, Map<String, Long>> legacyMisses = new ConcurrentHashMap<>();
 
+    private static final byte[] EMPTY_SOUNDS_JSON = "{}".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+
     private AssetSnapshot() {
         this.index = Collections.emptyMap();
-        this.byNamespace = Collections.emptyMap();
+        this.soundsByNamespace = Collections.emptyMap();
+        this.soundsJsonBytes = EMPTY_SOUNDS_JSON;
         this.namespaces = Set.of();
         this.discoveredModels = Set.of();
         this.discoveredTextures = Set.of();
@@ -76,7 +81,8 @@ public final class AssetSnapshot {
     }
 
     AssetSnapshot(Map<ResourceLocation, File> index,
-                  Map<String, NavigableMap<String, File>> byNamespace,
+                  Map<String, NavigableMap<String, File>> soundsByNamespace,
+                  byte[] soundsJsonBytes,
                   Set<String> namespaces,
                   Set<String> discoveredModels, Set<String> discoveredTextures,
                   Set<String> discoveredAnimations, Set<String> discoveredSounds,
@@ -87,7 +93,8 @@ public final class AssetSnapshot {
                   Map<ResourceLocation, ResourceLocation> modelToAnimation,
                   int skippedFiles) {
         this.index = index;
-        this.byNamespace = byNamespace;
+        this.soundsByNamespace = soundsByNamespace;
+        this.soundsJsonBytes = soundsJsonBytes != null ? soundsJsonBytes : EMPTY_SOUNDS_JSON;
         this.namespaces = namespaces;
         this.discoveredModels = discoveredModels;
         this.discoveredTextures = discoveredTextures;

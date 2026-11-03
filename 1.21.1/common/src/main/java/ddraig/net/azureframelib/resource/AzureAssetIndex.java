@@ -179,7 +179,7 @@ public final class AzureAssetIndex {
     private static List<String> namesOf(AssetSnapshot s, File f) {
         if (f == null) return List.of();
         AssetFileCache.Info info = s.fileInfo.get(f);
-        if (info == null) info = AzureResourceManager.FILE_CACHE.peek(f);
+        if (info == null) info = AzureResourceManager.FILE_CACHE.get(f);
         return info != null && info.kind == AssetFileCache.Kind.ANIMATION ? info.animationNames : List.of();
     }
 
@@ -236,6 +236,9 @@ public final class AzureAssetIndex {
                 if (canon != null) f = AzureResourceManager.indexedFile(s, canon);
             }
             AssetFileCache.Info info = f != null ? s.fileInfo.get(f) : null;
+            if (info == null && f != null) {
+                info = AzureResourceManager.FILE_CACHE.get(f);
+            }
             if (info != null) {
                 result = Optional.ofNullable(info.hitbox);
             } else {

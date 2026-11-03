@@ -87,8 +87,8 @@ public class AzureDynamicPackResources implements PackResources {
         }
 
         if (path.equals("sounds.json")) {
-            String json = generateSoundsJson(namespace);
-            byte[] bytes = json.getBytes(StandardCharsets.UTF_8);
+            AssetSnapshot snapshot = AzureResourceManager.snapshotForResourceLoading();
+            byte[] bytes = snapshot.soundsJsonBytes;
             return () -> new ByteArrayInputStream(bytes);
         }
 
@@ -207,81 +207,40 @@ public class AzureDynamicPackResources implements PackResources {
             return;
         }
 
-        String prefix = path.endsWith("/") ? path : path + "/";
+        // Only list sound files (.ogg) so SoundManager can validate sounds.json entries.
+        // Never list geo/, models/, animations/, or textures/ here:
+        // - GeckoLibCache.reload() calls listResources("geo"/"models"/"animations") and would
+        //   eagerly parse and bake thousands of unused models and animations into ~1.75 GB of RAM.
+        //   Instead, models and animations are baked lazily on demand via GeckoLibModelLoader & GeoModelMixin.
+        // - Vanilla ModelManager and TextureAtlas stitchers call listResources("models"/"textures")
+        //   and must not scan entity models or entity textures.
+        String cleanPath = path == null ? "" : path;
+        while (cleanPath.startsWith("/")) cleanPath = cleanPath.substring(1);
+        if (!cleanPath.equals("sounds") && !cleanPath.startsWith("sounds/")) {
+            return;
+        }
+
+        String prefix = cleanPath.endsWith("/") ? cleanPath : cleanPath + "/";
         AssetSnapshot snapshot = AzureResourceManager.snapshotForResourceLoading();
         Set<String> listed = new HashSet<>();
-        NavigableMap<String, File> byPath = snapshot.byNamespace.get(namespace.toLowerCase(Locale.ROOT));
+        NavigableMap<String, File> byPath = snapshot.soundsByNamespace.get(namespace.toLowerCase(Locale.ROOT));
         if (byPath != null) {
             for (Map.Entry<String, File> entry : byPath.subMap(prefix, true, prefix + '\uffff', false).entrySet()) {
                 Identifier loc = Identifier.tryBuild(namespace, entry.getKey());
                 if (loc == null) continue;
-                IoSupplier<InputStream> supplier = createIoSupplier(snapshot, loc, entry.getValue());
-                if (supplier != null) {
-                    listed.add(entry.getKey());
-                    output.accept(loc, supplier);
-                }
+                listed.add(entry.getKey());
+                output.accept(loc, rawSupplier(entry.getValue()));
             }
         }
         for (Map.Entry<Identifier, File> entry : AzureResourceManager.dynamicResources().entrySet()) {
             Identifier loc = entry.getKey();
-            if (!loc.getNamespace().equalsIgnoreCase(namespace) || !loc.getPath().startsWith(prefix) || listed.contains(loc.getPath())) {
+            if (!loc.getNamespace().equalsIgnoreCase(namespace)
+                    || !loc.getPath().startsWith(prefix)
+                    || !loc.getPath().endsWith(".ogg")
+                    || listed.contains(loc.getPath())) {
                 continue;
             }
-            IoSupplier<InputStream> supplier = createIoSupplier(snapshot, loc, entry.getValue());
-            if (supplier != null) output.accept(loc, supplier);
-        }
-    }
-
-    private String generateSoundsJson(String targetNamespace) {
-        Map<String, Object> rootJson = new HashMap<>();
-
-        for (AzureResourceManager.ResourceRoot root : AzureResourceManager.getRoots()) {
-            if (!root.directory.exists() || !root.directory.isDirectory()) continue;
-
-            if (root.category == AzureResourceManager.ResourceCategory.SOUND) {
-                scanOggDirectory(root.directory, "", root.namespace, rootJson);
-            } else if (root.category == AzureResourceManager.ResourceCategory.UNPACKED_BUNDLE) {
-                File[] folders = root.directory.listFiles();
-                if (folders == null) continue;
-                for (File folder : folders) {
-                    if (folder.isDirectory()) {
-                        String id = folder.getName();
-                        scanOggDirectory(folder, "", root.namespace + ".unpacked." + AzureResourceManager.sanitizePath(id), rootJson);
-                    }
-                }
-            }
-        }
-
-        return new GsonBuilder().setPrettyPrinting().create().toJson(rootJson);
-    }
-
-    private void scanOggDirectory(File dir, String relativePath, String eventPrefix, Map<String, Object> rootJson) {
-        File[] files = dir.listFiles();
-        if (files == null) return;
-        for (File f : files) {
-            if (f.isDirectory()) {
-                String nextRel = relativePath.isEmpty() ? f.getName() : relativePath + "/" + f.getName();
-                scanOggDirectory(f, nextRel, eventPrefix, rootJson);
-            } else if (f.isFile() && f.getName().toLowerCase(Locale.ROOT).endsWith(".ogg")) {
-                String nameNoExt = f.getName().substring(0, f.getName().length() - 4);
-                String soundPath = relativePath.isEmpty() ? nameNoExt : relativePath + "/" + nameNoExt;
-                String cleanPath = AzureResourceManager.sanitizePath(soundPath);
-
-                String eventSuffix = cleanPath.replace('/', '.');
-                String eventKey = eventPrefix.isEmpty() ? eventSuffix : eventPrefix + "." + eventSuffix;
-
-                Map<String, Object> entry = new HashMap<>();
-                entry.put("category", "neutral");
-
-                List<Object> soundList = new ArrayList<>();
-                Map<String, Object> soundObj = new HashMap<>();
-                soundObj.put("name", "azureframelib:" + cleanPath);
-                soundObj.put("stream", true);
-                soundList.add(soundObj);
-
-                entry.put("sounds", soundList);
-                rootJson.put(eventKey, entry);
-            }
+            output.accept(loc, rawSupplier(entry.getValue()));
         }
     }
 

@@ -6,12 +6,14 @@ import ddraig.net.azureframelib.resource.AzureResourceManager.ResourceRoot;
 import net.minecraft.resources.Identifier;
 
 import java.io.File;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -42,7 +44,9 @@ final class AssetIndexBuilder {
     private final List<ResourceRoot> roots;
     private final AssetFileCache cache;
 
-    private final Map<Identifier, File> index = new HashMap<>(1 << 16);
+    private final Map<Identifier, File> index = new HashMap<>();
+    private final Map<String, NavigableMap<String, File>> soundsByNs = new HashMap<>();
+    private final Map<String, String> soundEvents = new LinkedHashMap<>();
     private final Set<String> namespaces = new LinkedHashSet<>();
     private final Set<String> dModels = new HashSet<>();
     private final Set<String> dTextures = new HashSet<>();
@@ -98,10 +102,21 @@ final class AssetIndexBuilder {
                 addJavaModelFromRoot(root, ns, f);
                 continue;
             }
-            if (!lower.endsWith(".json") || AzureResourceManager.IGNORED_CONFIG_JSONS.contains(lower)) continue;
+            if (!lower.endsWith(".json") || lower.endsWith(".animation.json")
+                    || AzureResourceManager.IGNORED_CONFIG_JSONS.contains(lower)) {
+                continue;
+            }
+            String rel = relPath(root.directory, f);
+            if (lower.endsWith(".geo.json")) {
+                if (f.length() == 0) {
+                    problem(f, "Model file \"" + rel + "\" can't be used: the file is empty.");
+                    continue;
+                }
+                addModelFromRoot(ns, f, cache.peek(f), rel);
+                continue;
+            }
             AssetFileCache.Info info = cache.get(f);
             if (info == null) continue;
-            String rel = relPath(root.directory, f);
             switch (info.kind) {
                 case MODEL -> addModelFromRoot(ns, f, info, rel);
                 case BROKEN -> problem(f, "Model file \"" + rel + "\" can't be used: " + info.problem + ".");
@@ -119,7 +134,7 @@ final class AssetIndexBuilder {
         Identifier canon = registerAsset(Type.MODEL, ns, "geo/" + relNoExt + ".geo.json", f, true);
         if (canon == null) return;
         checkName(f, rel, cleanRel);
-        infos.put(f, info);
+        if (info != null) infos.put(f, info);
 
         dModels.add(base);
         dModels.add(ns + ":" + base);
@@ -129,17 +144,7 @@ final class AssetIndexBuilder {
         index(ns, "geo/" + cleanRel, f);
         index(ns, "models/" + cleanRel, f);
         index(ns, "geo/" + base + ".geo.json", f);
-        index(ns, "geo/" + base + ".json", f);
-        index(ns, "geo/" + base, f);
         index(ns, "models/" + base + ".geo.json", f);
-        index(ns, "models/" + base + ".json", f);
-        index(ns, "models/" + base, f);
-        index(ns, base + ".geo.json", f);
-        index(ns, base + ".json", f);
-        index(ns, "geo/" + relNoExt + ".json", f);
-        index(ns, "models/" + relNoExt + ".json", f);
-        index(ns, "geo/" + relNoExt, f);
-        index(ns, "models/" + relNoExt, f);
 
         key(Type.MODEL, ns, relNoExt, canon);
         key(Type.MODEL, ns, base, canon);
@@ -188,8 +193,6 @@ final class AssetIndexBuilder {
 
             index(ns, "textures/" + cleanRel, f);
             index(ns, "textures/" + base + ".png", f);
-            index(ns, "textures/" + base, f);
-            index(ns, base + ".png", f);
 
             key(Type.TEXTURE, ns, relNoExt, canon);
             key(Type.TEXTURE, ns, base, canon);
@@ -199,10 +202,21 @@ final class AssetIndexBuilder {
     private void scanAnimations(ResourceRoot root, String ns) {
         for (File f : walk(root.directory)) {
             String lower = f.getName().toLowerCase(Locale.ROOT);
-            if (!lower.endsWith(".json") || AzureResourceManager.IGNORED_CONFIG_JSONS.contains(lower)) continue;
+            if (!lower.endsWith(".json") || lower.endsWith(".geo.json")
+                    || AzureResourceManager.IGNORED_CONFIG_JSONS.contains(lower)) {
+                continue;
+            }
+            String rel = relPath(root.directory, f);
+            if (lower.endsWith(".animation.json")) {
+                if (f.length() == 0) {
+                    problem(f, "Animation file \"" + rel + "\" can't be used: the file is empty.");
+                    continue;
+                }
+                addAnimationFromRoot(ns, f, cache.peek(f), rel);
+                continue;
+            }
             AssetFileCache.Info info = cache.get(f);
             if (info == null) continue;
-            String rel = relPath(root.directory, f);
             switch (info.kind) {
                 case ANIMATION -> addAnimationFromRoot(ns, f, info, rel);
                 case BROKEN -> problem(f, "Animation file \"" + rel + "\" can't be used: " + info.problem + ".");
@@ -220,7 +234,7 @@ final class AssetIndexBuilder {
         Identifier canon = registerAsset(Type.ANIMATION, ns, "animations/" + relNoExt + ".animation.json", f, true);
         if (canon == null) return;
         checkName(f, rel, cleanRel);
-        infos.put(f, info);
+        if (info != null) infos.put(f, info);
 
         dAnimations.add(cleanRel);
         dAnimations.add(ns + ":" + cleanRel);
@@ -229,11 +243,6 @@ final class AssetIndexBuilder {
 
         index(ns, "animations/" + cleanRel, f);
         index(ns, "animations/" + base + ".animation.json", f);
-        index(ns, "animations/" + base + ".json", f);
-        index(ns, "animations/" + base, f);
-        index(ns, base + ".animation.json", f);
-        index(ns, "animations/" + relNoExt + ".json", f);
-        index(ns, "animations/" + relNoExt, f);
 
         key(Type.ANIMATION, ns, relNoExt, canon);
         key(Type.ANIMATION, ns, base, canon);
@@ -256,10 +265,9 @@ final class AssetIndexBuilder {
             dSounds.add(base);
 
             index(ns, "sounds/" + clean + ".ogg", f);
-            index(ns, "sounds/" + clean, f);
             index(ns, "sounds/" + base + ".ogg", f);
-            index(ns, "sounds/" + base, f);
-            index(ns, base + ".ogg", f);
+            addSoundPath(ns, "sounds/" + clean + ".ogg", f);
+            soundEvents.putIfAbsent(ns + "." + clean.replace('/', '.'), "azureframelib:" + clean);
 
             key(Type.SOUND, ns, clean, canon);
             key(Type.SOUND, ns, base, canon);
@@ -302,34 +310,26 @@ final class AssetIndexBuilder {
         for (File f : all) {
             String lower = f.getName().toLowerCase(Locale.ROOT);
             if (lower.endsWith(".geo.json")) {
-                AssetFileCache.Info info = cache.get(f);
-                if (info == null) continue;
-                if (info.kind == AssetFileCache.Kind.MODEL) {
-                    if (primaryGeo == null) {
-                        primaryGeo = f;
-                        primaryGeoInfo = info;
-                    } else {
-                        extraGeo.add(f);
-                    }
-                } else if (info.kind == AssetFileCache.Kind.BROKEN) {
-                    problem(f, "Model file \"" + rawId + "/" + relPath(folder, f) + "\" can't be used: " + info.problem + ".");
-                } else if (info.kind == AssetFileCache.Kind.OTHER_JSON) {
-                    problem(f, "Model file \"" + rawId + "/" + relPath(folder, f) + "\" has no \"minecraft:geometry\" section, so it can't be used as a model.");
+                if (f.length() == 0) {
+                    problem(f, "Model file \"" + rawId + "/" + relPath(folder, f) + "\" can't be used: the file is empty.");
+                    continue;
+                }
+                if (primaryGeo == null) {
+                    primaryGeo = f;
+                    primaryGeoInfo = cache.peek(f);
+                } else {
+                    extraGeo.add(f);
                 }
             } else if (lower.endsWith(".animation.json")) {
-                AssetFileCache.Info info = cache.get(f);
-                if (info == null) continue;
-                if (info.kind == AssetFileCache.Kind.ANIMATION) {
-                    if (primaryAnim == null) {
-                        primaryAnim = f;
-                        primaryAnimInfo = info;
-                    } else {
-                        extraAnim.add(f);
-                    }
-                } else if (info.kind == AssetFileCache.Kind.BROKEN) {
-                    problem(f, "Animation file \"" + rawId + "/" + relPath(folder, f) + "\" can't be used: " + info.problem + ".");
-                } else if (info.kind == AssetFileCache.Kind.OTHER_JSON) {
-                    problem(f, "Animation file \"" + rawId + "/" + relPath(folder, f) + "\" has no \"animations\" section, so it can't be used.");
+                if (f.length() == 0) {
+                    problem(f, "Animation file \"" + rawId + "/" + relPath(folder, f) + "\" can't be used: the file is empty.");
+                    continue;
+                }
+                if (primaryAnim == null) {
+                    primaryAnim = f;
+                    primaryAnimInfo = cache.peek(f);
+                } else {
+                    extraAnim.add(f);
                 }
             }
         }
@@ -362,7 +362,7 @@ final class AssetIndexBuilder {
             if (modelCanon != null) {
                 String relIn = relPath(folder, primaryGeo);
                 checkName(primaryGeo, relIn, AzureResourceManager.sanitizePath(relIn));
-                infos.put(primaryGeo, primaryGeoInfo);
+                if (primaryGeoInfo != null) infos.put(primaryGeo, primaryGeoInfo);
                 dModels.add(cleanId);
                 dModels.add(ns + ":" + cleanId);
                 indexBundleModelAliases(ns, cleanId, primaryGeo);
@@ -380,7 +380,8 @@ final class AssetIndexBuilder {
                 if (name.isEmpty() || name.equals(cleanId) || name.equals(cleanName)) continue;
                 Identifier canon = registerAsset(Type.MODEL, ns, "geo/" + name + ".geo.json", f, false);
                 if (canon == null) continue;
-                infos.put(f, cache.get(f));
+                AssetFileCache.Info extraInfo = cache.peek(f);
+                if (extraInfo != null) infos.put(f, extraInfo);
                 dModels.add(name);
                 dModels.add(ns + ":" + name);
                 indexBundleModelAliases(ns, name, f);
@@ -402,7 +403,6 @@ final class AssetIndexBuilder {
                     dModels.add(cleanId);
                     dModels.add(ns + ":" + cleanId);
                     index(ns, "models/" + cleanId + ".java", javaFile);
-                    index(ns, cleanId + ".java", javaFile);
                     key(Type.JAVA_MODEL, ns, cleanId, canon);
                 }
             }
@@ -416,7 +416,7 @@ final class AssetIndexBuilder {
             if (animCanon != null) {
                 String relIn = relPath(folder, primaryAnim);
                 checkName(primaryAnim, relIn, AzureResourceManager.sanitizePath(relIn));
-                infos.put(primaryAnim, primaryAnimInfo);
+                if (primaryAnimInfo != null) infos.put(primaryAnim, primaryAnimInfo);
                 dAnimations.add(cleanId);
                 dAnimations.add(ns + ":" + cleanId);
                 indexBundleAnimationAliases(ns, cleanId, cleanId, primaryAnim);
@@ -436,7 +436,8 @@ final class AssetIndexBuilder {
                 if (name == null || name.isEmpty() || name.equals(cleanId)) continue;
                 Identifier canon = registerAsset(Type.ANIMATION, ns, "animations/" + name + ".animation.json", f, false);
                 if (canon == null) continue;
-                infos.put(f, cache.get(f));
+                AssetFileCache.Info extraInfo = cache.peek(f);
+                if (extraInfo != null) infos.put(f, extraInfo);
                 dAnimations.add(name);
                 dAnimations.add(ns + ":" + name);
                 indexBundleAnimationAliases(ns, cleanId, name, f);
@@ -479,8 +480,6 @@ final class AssetIndexBuilder {
             index(ns, "textures/entity/" + cleanId + "/" + cleanRel, f);
             index(ns, "textures/" + cleanRel, f);
             index(ns, "textures/" + base + ".png", f);
-            index(ns, "textures/" + base, f);
-            index(ns, base + ".png", f);
 
             key(Type.TEXTURE, ns, cleanId + "/" + relNoExt, canon);
             key(Type.TEXTURE, ns, "entity/" + cleanId + "/" + relNoExt, canon);
@@ -514,8 +513,9 @@ final class AssetIndexBuilder {
 
             index(ns, "sounds/" + cleanRel + ".ogg", f);
             index(ns, "sounds/" + base + ".ogg", f);
-            index(ns, "sounds/" + base, f);
-            index(ns, base + ".ogg", f);
+            addSoundPath(ns, "sounds/" + cleanId + "/" + cleanRel + ".ogg", f);
+            addSoundPath(ns, "sounds/" + cleanRel + ".ogg", f);
+            soundEvents.putIfAbsent(ns + ".unpacked." + cleanId + "." + cleanRel.replace('/', '.'), "azureframelib:" + cleanRel);
 
             key(Type.SOUND, ns, cleanId + "/" + cleanRel, canon);
             key(Type.SOUND, ns, cleanRel, canon);
@@ -525,22 +525,38 @@ final class AssetIndexBuilder {
 
     private void indexBundleModelAliases(String ns, String id, File f) {
         index(ns, "geo/" + id + ".geo.json", f);
-        index(ns, "geo/" + id + ".json", f);
-        index(ns, "geo/" + id, f);
         index(ns, "models/" + id + ".geo.json", f);
-        index(ns, "models/" + id + ".json", f);
-        index(ns, "models/" + id, f);
-        index(ns, id + ".geo.json", f);
-        index(ns, id + ".json", f);
     }
 
     private void indexBundleAnimationAliases(String ns, String folderId, String id, File f) {
         index(ns, "animations/" + id + ".animation.json", f);
-        index(ns, "animations/" + id + ".json", f);
-        index(ns, "animations/" + id, f);
-        index(ns, id + ".animation.json", f);
         // Some mods ask for "animations/<folder>/<file>.animation.json"
         index(ns, "animations/" + folderId + "/" + id + ".animation.json", f);
+    }
+
+    private void addSoundPath(String ns, String path, File f) {
+        String lp = path.toLowerCase(Locale.ROOT);
+        soundsByNs.computeIfAbsent(ns, k -> new TreeMap<>()).putIfAbsent(lp, f);
+        if (!"azureframelib".equals(ns)) {
+            soundsByNs.computeIfAbsent("azureframelib", k -> new TreeMap<>()).putIfAbsent(lp, f);
+        }
+    }
+
+    private byte[] buildSoundsJsonBytes() {
+        if (soundEvents.isEmpty()) {
+            return "{}".getBytes(StandardCharsets.UTF_8);
+        }
+        StringBuilder sb = new StringBuilder(soundEvents.size() * 96);
+        sb.append('{');
+        boolean first = true;
+        for (Map.Entry<String, String> e : soundEvents.entrySet()) {
+            if (!first) sb.append(',');
+            first = false;
+            sb.append('"').append(e.getKey()).append("\":{\"category\":\"neutral\",\"sounds\":[{\"name\":\"")
+              .append(e.getValue()).append("\",\"stream\":true}]}");
+        }
+        sb.append('}');
+        return sb.toString().getBytes(StandardCharsets.UTF_8);
     }
 
     private static String animationBaseName(File f) {
@@ -570,12 +586,8 @@ final class AssetIndexBuilder {
     }
 
     private AssetSnapshot freeze() {
-        Map<String, NavigableMap<String, File>> byNs = new HashMap<>();
-        for (Map.Entry<Identifier, File> e : index.entrySet()) {
-            byNs.computeIfAbsent(e.getKey().getNamespace(), k -> new TreeMap<>()).put(e.getKey().getPath(), e.getValue());
-        }
-        Map<String, NavigableMap<String, File>> byNsFrozen = new HashMap<>();
-        byNs.forEach((k, v) -> byNsFrozen.put(k, Collections.unmodifiableNavigableMap(v)));
+        Map<String, NavigableMap<String, File>> soundsByNsFrozen = new HashMap<>();
+        soundsByNs.forEach((k, v) -> soundsByNsFrozen.put(k, Collections.unmodifiableNavigableMap(v)));
 
         EnumMap<Type, Map<String, Identifier>> keysFrozen = new EnumMap<>(Type.class);
         keys.forEach((t, m) -> keysFrozen.put(t, Collections.unmodifiableMap(m)));
@@ -584,7 +596,8 @@ final class AssetIndexBuilder {
 
         return new AssetSnapshot(
                 Collections.unmodifiableMap(index),
-                Collections.unmodifiableMap(byNsFrozen),
+                Collections.unmodifiableMap(soundsByNsFrozen),
+                buildSoundsJsonBytes(),
                 Collections.unmodifiableSet(namespaces),
                 Set.copyOf(dModels), Set.copyOf(dTextures), Set.copyOf(dAnimations), Set.copyOf(dSounds),
                 Collections.unmodifiableMap(keysFrozen),

@@ -1,5 +1,6 @@
 package ddraig.net.azureframelib.geckomixin;
 
+import ddraig.net.azureframelib.client.GeckoLibModelLoader;
 import ddraig.net.azureframelib.compat.geckolib.ShortAnimationNames;
 import ddraig.net.azureframelib.config.AzureFrameLibConfig;
 import ddraig.net.azureframelib.resource.AzureAssetIndex;
@@ -16,6 +17,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 /**
  * Fixes for GeckoLib models that use AzureFrameLib assets (only in AzureFrameLib's namespaces).
  * <ul>
+ *   <li>Loads models and animations on demand the first time an entity or screen asks for them,
+ *   instead of pre-baking thousands of unused files into RAM at startup.</li>
  *   <li>Many models replace {@code getBakedModel} without calling GeckoLib's version, so GeckoLib
  *   never learns the model's bones and skips every animation. Before animating, this makes sure
  *   the bones of the model being drawn are known to the animation system.</li>
@@ -32,6 +35,15 @@ public abstract class GeoModelMixin {
     @Unique
     private boolean azureframelib$managed;
 
+    @Inject(method = "getBakedModel", at = @At("HEAD"), require = 0)
+    private void azureframelib$ensureModelLoaded(ResourceLocation location, CallbackInfoReturnable<Object> cir) {
+        if (location == null || !AzureAssetIndex.isManagedNamespace(location.getNamespace())) return;
+        try {
+            GeckoLibModelLoader.ensureModelInCache(location);
+        } catch (Throwable ignored) {
+        }
+    }
+
     @Inject(method = "handleAnimations", at = @At("HEAD"), require = 0)
     private void azureframelib$registerBones(@Coerce Object animatable, long instanceId, @Coerce Object animationState, CallbackInfo ci) {
         if (!AzureFrameLibConfig.get().fixAnimationBones) return;
@@ -44,6 +56,15 @@ public abstract class GeoModelMixin {
             }
             if (!this.azureframelib$managed) return;
             ShortAnimationNames.ensureBonesRegistered(this, res);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    @Inject(method = "getAnimation", at = @At("HEAD"), require = 0)
+    private void azureframelib$ensureAnimationLoaded(@Coerce Object animatable, String name, CallbackInfoReturnable<Object> cir) {
+        if (name == null) return;
+        try {
+            ShortAnimationNames.ensureAnimationLoaded(this, animatable);
         } catch (Throwable ignored) {
         }
     }

@@ -141,6 +141,16 @@ public final class ShortAnimationNames {
         }
     }
 
+    public static void ensureAnimationLoaded(Object geoModel, Object animatable) {
+        if (!init() || geoModel == null || getAnimationResource == null) return;
+        try {
+            Identifier loc = (Identifier) getAnimationResource.invoke(geoModel, animatable);
+            if (loc == null || !AzureAssetIndex.isManagedNamespace(loc.getNamespace())) return;
+            ddraig.net.azureframelib.client.GeckoLibModelLoader.ensureAnimationInCache(loc);
+        } catch (Throwable ignored) {
+        }
+    }
+
     public static Object findShortAnimation(Object geoModel, Object animatable, String requested) {
         if (requested == null || !AzureFrameLibConfig.get().addShortAnimationNames || !init() || geoModel == null) {
             return null;
@@ -150,8 +160,10 @@ public final class ShortAnimationNames {
             Identifier loc = (Identifier) getAnimationResource.invoke(geoModel, animatable);
             if (loc == null || !AzureAssetIndex.isManagedNamespace(loc.getNamespace())) return null;
             Map<?, ?> allBaked = (Map<?, ?>) getBakedAnimationsMethod.invoke(null);
-            if (allBaked == null) return null;
-            Object baked = allBaked.get(loc);
+            Object baked = allBaked != null ? allBaked.get(loc) : null;
+            if (baked == null) {
+                baked = ddraig.net.azureframelib.client.GeckoLibModelLoader.getOrLoadBakedAnimations(loc);
+            }
             return find(baked, requested);
         } catch (Throwable ignored) {
             return null;

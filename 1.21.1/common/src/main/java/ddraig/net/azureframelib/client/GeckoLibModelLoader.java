@@ -34,9 +34,48 @@ public class GeckoLibModelLoader {
 
     private static final Map<ResourceLocation, Object> FALLBACK_MODELS = new ConcurrentHashMap<>();
     private static final Map<ResourceLocation, Object> FALLBACK_ANIMATIONS = new ConcurrentHashMap<>();
+    private static final Map<File, Object> BAKED_MODELS_BY_FILE = new ConcurrentHashMap<>();
+    private static final Map<File, Object> BAKED_ANIMATIONS_BY_FILE = new ConcurrentHashMap<>();
     private static final java.util.Set<ResourceLocation> FAILED_MODELS = Collections.newSetFromMap(new ConcurrentHashMap<>());
     private static final java.util.Set<ResourceLocation> FAILED_ANIMATIONS = Collections.newSetFromMap(new ConcurrentHashMap<>());
+    private static volatile Object emptyBakedModel;
+    private static volatile Object emptyBakedAnimations;
     private static volatile int seenIndexVersion = -1;
+
+    private static final class LazyGeckoMap extends ConcurrentHashMap<ResourceLocation, Object> {
+        private final boolean modelMap;
+        private final ThreadLocal<Boolean> loading = ThreadLocal.withInitial(() -> Boolean.FALSE);
+
+        LazyGeckoMap(boolean modelMap) {
+            this.modelMap = modelMap;
+        }
+
+        Object getRaw(Object key) {
+            return super.get(key);
+        }
+
+        @Override
+        public Object get(Object key) {
+            Object v = super.get(key);
+            if (v != null || !(key instanceof ResourceLocation rl)) return v;
+            if (!isManagedNamespace(rl.getNamespace())) return null;
+            if (Boolean.TRUE.equals(loading.get())) return null;
+            loading.set(Boolean.TRUE);
+            try {
+                return modelMap ? getOrLoadBakedModel(rl) : getOrLoadBakedAnimations(rl);
+            } catch (Throwable ignored) {
+                return null;
+            } finally {
+                loading.set(Boolean.FALSE);
+            }
+        }
+    }
+
+    private static Object getRaw(Map<?, ?> map, ResourceLocation key) {
+        if (map == null || key == null) return null;
+        if (map instanceof LazyGeckoMap lazy) return lazy.getRaw(key);
+        return map.get(key);
+    }
 
     // ------------------------------------------------------------------
     // Cached GeckoLib reflection (looked up once)
@@ -114,6 +153,8 @@ public class GeckoLibModelLoader {
             FAILED_ANIMATIONS.clear();
             FALLBACK_MODELS.clear();
             FALLBACK_ANIMATIONS.clear();
+            BAKED_MODELS_BY_FILE.clear();
+            BAKED_ANIMATIONS_BY_FILE.clear();
         }
     }
 
@@ -123,11 +164,17 @@ public class GeckoLibModelLoader {
         FAILED_ANIMATIONS.clear();
         FALLBACK_MODELS.clear();
         FALLBACK_ANIMATIONS.clear();
+        BAKED_MODELS_BY_FILE.clear();
+        BAKED_ANIMATIONS_BY_FILE.clear();
+        ensureModifiableModelMap();
+        ensureModifiableAnimationMap();
     }
 
     public static void clearCaches() {
         FALLBACK_MODELS.clear();
         FALLBACK_ANIMATIONS.clear();
+        BAKED_MODELS_BY_FILE.clear();
+        BAKED_ANIMATIONS_BY_FILE.clear();
         FAILED_MODELS.clear();
         FAILED_ANIMATIONS.clear();
         try {
@@ -149,6 +196,8 @@ public class GeckoLibModelLoader {
         FAILED_ANIMATIONS.removeIf(loc -> loc.getPath().contains(clean));
         FALLBACK_MODELS.keySet().removeIf(loc -> loc.getPath().contains(clean));
         FALLBACK_ANIMATIONS.keySet().removeIf(loc -> loc.getPath().contains(clean));
+        BAKED_MODELS_BY_FILE.keySet().removeIf(f -> AzureResourceManager.sanitizePath(f.getName()).contains(clean));
+        BAKED_ANIMATIONS_BY_FILE.keySet().removeIf(f -> AzureResourceManager.sanitizePath(f.getName()).contains(clean));
 
         try {
             Map<?, ?> models = GL.models();
@@ -172,13 +221,12 @@ public class GeckoLibModelLoader {
 
         Map<?, ?> models = GL.models();
         if (models != null) {
-            Object existing = models.get(location);
+            Object existing = getRaw(models, location);
             if (existing != null) return existing;
         }
 
         Object fallback = FALLBACK_MODELS.get(location);
         if (fallback != null) {
-            // GeckoLib replaced its maps (resource reload): put our copy back so GeckoLib can find it too.
             if (GL.PRESENT && models != null && !(fallback instanceof JsonElement)) {
                 injectModel(location, fallback);
             }
@@ -187,8 +235,14 @@ public class GeckoLibModelLoader {
 
         File file = findSourceFile(location, true);
         if (file != null && file.isFile()) {
+            Object byFile = BAKED_MODELS_BY_FILE.get(file);
+            if (byFile != null) {
+                injectModel(location, byFile);
+                return byFile;
+            }
             Object baked = bakeModelFromFile(location, file);
             if (baked != null) {
+                BAKED_MODELS_BY_FILE.put(file, baked);
                 injectModel(location, baked);
                 return baked;
             }
@@ -208,7 +262,7 @@ public class GeckoLibModelLoader {
 
         Map<?, ?> anims = GL.animations();
         if (anims != null) {
-            Object existing = anims.get(location);
+            Object existing = getRaw(anims, location);
             if (existing != null) return existing;
         }
 
@@ -222,8 +276,14 @@ public class GeckoLibModelLoader {
 
         File file = findSourceFile(location, false);
         if (file != null && file.isFile()) {
+            Object byFile = BAKED_ANIMATIONS_BY_FILE.get(file);
+            if (byFile != null) {
+                injectAnimations(location, byFile);
+                return byFile;
+            }
             Object baked = bakeAnimationsFromFile(location, file);
             if (baked != null) {
+                BAKED_ANIMATIONS_BY_FILE.put(file, baked);
                 injectAnimations(location, baked);
                 return baked;
             }
@@ -233,21 +293,85 @@ public class GeckoLibModelLoader {
         return null;
     }
 
+    /**
+     * Ensures that a model in a managed namespace is present in GeckoLibCache before GeoModel.getBakedModel reads it.
+     * If the model file is missing or corrupt, a tiny shared empty model is placed under that key so GeckoLib never crashes.
+     */
+    public static void ensureModelInCache(ResourceLocation location) {
+        if (location == null || !GL.PRESENT) return;
+        Map<?, ?> models = GL.models();
+        if (getRaw(models, location) != null) return;
+        if (getOrLoadBakedModel(location) != null) return;
+        Object empty = getOrCreateEmptyModel();
+        if (empty != null) {
+            Map<ResourceLocation, Object> map = ensureModifiableModelMap();
+            if (map != null) map.putIfAbsent(location, empty);
+        }
+    }
+
+    /**
+     * Ensures that animations in a managed namespace are present in GeckoLibCache before GeoModel.getAnimation reads them.
+     * If the animation file is missing or corrupt, a shared empty BakedAnimations is placed under that key so GeckoLib never crashes.
+     */
+    public static void ensureAnimationInCache(ResourceLocation location) {
+        if (location == null || !GL.PRESENT) return;
+        Map<?, ?> anims = GL.animations();
+        if (getRaw(anims, location) != null) return;
+        if (getOrLoadBakedAnimations(location) != null) return;
+        Object empty = getOrCreateEmptyAnimations();
+        if (empty != null) {
+            Map<ResourceLocation, Object> map = ensureModifiableAnimationMap();
+            if (map != null) map.putIfAbsent(location, empty);
+        }
+    }
+
+    private static Object getOrCreateEmptyModel() {
+        Object cached = emptyBakedModel;
+        if (cached != null) return cached;
+        try {
+            ResourceLocation dummy = ResourceLocation.tryBuild(AzureFrameLib.MOD_ID, "geo/empty.geo.json");
+            String json = new String(AzureResourceManager.getEmptyGeoModelFallbackBytes(dummy), StandardCharsets.UTF_8);
+            JsonElement parsed = parseLenient(json);
+            Object rawModel = GL.fromJsonElement.invoke(GL.geoGson, parsed.getAsJsonObject(), GL.modelClass);
+            Object tree = GL.geometryFromModel.invoke(null, rawModel);
+            Object factoryObj = GL.factoryForNamespace.invoke(null, AzureFrameLib.MOD_ID);
+            cached = GL.constructGeoModel.invoke(factoryObj, tree);
+            emptyBakedModel = cached;
+            return cached;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    private static Object getOrCreateEmptyAnimations() {
+        Object cached = emptyBakedAnimations;
+        if (cached != null) return cached;
+        try {
+            JsonObject emptyObj = new JsonObject();
+            cached = GL.fromJsonElement.invoke(GL.geoGson, emptyObj, GL.bakedAnimationsClass);
+            emptyBakedAnimations = cached;
+            return cached;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
     /** Finds the file for a model/animation location: index first (memory only), then the older name search. */
     private static File findSourceFile(ResourceLocation location, boolean model) {
         String path = location.getPath();
         try {
-            Optional<File> direct = AzureAssetIndex.getSourceFile(location);
-            if (direct.isPresent()) {
-                File f = direct.get();
-                if (model ? AzureResourceManager.isValidGeoModelFile(f) : AzureResourceManager.isValidAnimationFile(f)) {
-                    return f;
-                }
-            }
             Optional<ResourceLocation> canon = model ? AzureAssetIndex.findModel(location.toString()) : AzureAssetIndex.findAnimation(location.toString());
             if (canon.isPresent()) {
                 Optional<File> f = AzureAssetIndex.getSourceFile(canon.get());
                 if (f.isPresent()) return f.get();
+            }
+            Optional<File> direct = AzureAssetIndex.getSourceFile(location);
+            if (direct.isPresent()) {
+                File f = direct.get();
+                String lower = f.getName().toLowerCase(Locale.ROOT);
+                if (lower.endsWith(".json") && (model ? !lower.endsWith(".animation.json") : !lower.endsWith(".geo.json"))) {
+                    return f;
+                }
             }
         } catch (Throwable ignored) {
         }
@@ -273,12 +397,11 @@ public class GeckoLibModelLoader {
     }
 
     public static Object bakeModelFromFile(ResourceLocation location, File file) {
-        if (file == null || !file.isFile()) return null;
+        if (file == null || !file.isFile() || file.length() == 0) return null;
         String name = file.getName().toLowerCase(Locale.ROOT);
-        if (name.endsWith(".png") || name.endsWith(".ogg") || name.endsWith(".animation.json") || name.endsWith(".java") || name.endsWith(".class") || name.endsWith(".jar")) {
+        if (!name.endsWith(".json") || name.endsWith(".animation.json")) {
             return null;
         }
-        if (!AzureResourceManager.isValidGeoModelFile(file)) return null;
         try {
             String content = new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
             return bakeModelFromJson(location, content);
@@ -352,12 +475,11 @@ public class GeckoLibModelLoader {
     }
 
     public static Object bakeAnimationsFromFile(ResourceLocation location, File file) {
-        if (file == null || !file.isFile()) return null;
+        if (file == null || !file.isFile() || file.length() == 0) return null;
         String name = file.getName().toLowerCase(Locale.ROOT);
-        if (name.endsWith(".png") || name.endsWith(".ogg") || name.endsWith(".geo.json") || name.endsWith(".java") || name.endsWith(".class") || name.endsWith(".jar")) {
+        if (!name.endsWith(".json") || name.endsWith(".geo.json")) {
             return null;
         }
-        if (!AzureResourceManager.isValidAnimationFile(file)) return null;
         try {
             String content = new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
             return bakeAnimationsFromJson(location, content);
@@ -451,8 +573,9 @@ public class GeckoLibModelLoader {
                 try {
                     map.put(loc, bakedModel);
                 } catch (Throwable ignored) {}
+            } else {
+                FALLBACK_MODELS.put(loc, bakedModel);
             }
-            FALLBACK_MODELS.put(loc, bakedModel);
         }
     }
 
@@ -491,8 +614,9 @@ public class GeckoLibModelLoader {
                 try {
                     map.put(loc, bakedAnimations);
                 } catch (Throwable ignored) {}
+            } else {
+                FALLBACK_ANIMATIONS.put(loc, bakedAnimations);
             }
-            FALLBACK_ANIMATIONS.put(loc, bakedAnimations);
         }
     }
 
@@ -519,7 +643,7 @@ public class GeckoLibModelLoader {
     public static Object getCachedBakedModel(ResourceLocation location) {
         if (location == null) return null;
         Map<?, ?> models = GL.models();
-        Object o = models != null ? models.get(location) : null;
+        Object o = models != null ? getRaw(models, location) : null;
         return o != null ? o : FALLBACK_MODELS.get(location);
     }
 
@@ -527,7 +651,7 @@ public class GeckoLibModelLoader {
     public static Object getCachedBakedAnimations(ResourceLocation location) {
         if (location == null) return null;
         Map<?, ?> anims = GL.animations();
-        Object o = anims != null ? anims.get(location) : null;
+        Object o = anims != null ? getRaw(anims, location) : null;
         return o != null ? o : FALLBACK_ANIMATIONS.get(location);
     }
 
@@ -605,26 +729,21 @@ public class GeckoLibModelLoader {
     }
 
     public static Map<ResourceLocation, Object> ensureModifiableModelMap() {
-        return ensureModifiableMap(GL.modelsField);
+        return ensureModifiableMap(GL.modelsField, true);
     }
 
     public static Map<ResourceLocation, Object> ensureModifiableAnimationMap() {
-        return ensureModifiableMap(GL.animationsField);
+        return ensureModifiableMap(GL.animationsField, false);
     }
 
     @SuppressWarnings("unchecked")
-    private static synchronized Map<ResourceLocation, Object> ensureModifiableMap(Field field) {
+    private static synchronized Map<ResourceLocation, Object> ensureModifiableMap(Field field, boolean modelMap) {
         if (!GL.PRESENT || field == null) return null;
         try {
             Map<?, ?> map = (Map<?, ?>) field.get(null);
 
-            boolean needsSwap = (map == null)
-                    || map.getClass().getName().contains("EmptyMap")
-                    || map.getClass().getName().contains("Unmodifiable")
-                    || !(map instanceof ConcurrentMap);
-
-            if (needsSwap) {
-                Map<ResourceLocation, Object> mutableMap = new ConcurrentHashMap<>();
+            if (!(map instanceof LazyGeckoMap)) {
+                LazyGeckoMap mutableMap = new LazyGeckoMap(modelMap);
                 if (map != null) {
                     for (Map.Entry<?, ?> entry : map.entrySet()) {
                         if (entry.getKey() instanceof ResourceLocation loc && entry.getValue() != null) {

@@ -584,28 +584,45 @@ public class AzureResourceManager {
         Optional<File> cached = cache.get(trimmed);
         if (cached != null) return cached.orElse(null);
 
-        Map<String, Long> misses = s.legacyMisses(type);
-        long now = System.currentTimeMillis();
-        Long missedAt = misses.get(trimmed);
-        if (missedAt != null && now - missedAt < LEGACY_MISS_RETRY_MS) return null;
-
         File found = null;
         boolean fromIndex = false;
         try {
             found = findInIndex(s, type, trimmed);
             fromIndex = found != null;
-            if (found == null) found = findOnDisk(type, trimmed);
+            if (found == null) {
+                if (s.isEmpty()) {
+                    // Index not built yet: fall back to disk search with retry cooldown.
+                    Map<String, Long> misses = s.legacyMisses(type);
+                    long now = System.currentTimeMillis();
+                    Long missedAt = misses.get(trimmed);
+                    if (missedAt != null && now - missedAt < LEGACY_MISS_RETRY_MS) return null;
+                    found = findOnDisk(type, trimmed);
+                    if (found == null) {
+                        misses.put(trimmed, now);
+                        return null;
+                    }
+                } else if (looksLikeDirectFilePath(trimmed)) {
+                    File direct = new File(trimmed);
+                    if (direct.isFile() && matchesTypeOnDisk(type, direct)) {
+                        found = direct;
+                    }
+                }
+            }
         } catch (Throwable ignored) {
         }
 
-        if (found != null) {
-            cache.put(trimmed, Optional.of(found));
-            misses.remove(trimmed);
-            if (!fromIndex) noteFileMissingFromIndex(s, found);
-        } else {
-            misses.put(trimmed, now);
+        cache.put(trimmed, Optional.ofNullable(found));
+        if (found != null && !fromIndex) {
+            noteFileMissingFromIndex(s, found);
         }
         return found;
+    }
+
+    private static boolean looksLikeDirectFilePath(String s) {
+        if (s.startsWith("/") || s.startsWith("\\")) return true;
+        if (s.length() > 2 && s.charAt(1) == ':' && (s.charAt(2) == '\\' || s.charAt(2) == '/')) return true;
+        String lower = s.toLowerCase(Locale.ROOT);
+        return lower.startsWith("config/") || lower.startsWith("config\\");
     }
 
     private static File findInIndex(AssetSnapshot s, Type type, String trimmed) {
@@ -624,26 +641,37 @@ public class AzureResourceManager {
             if (f != null) return f;
         }
 
-        // 3. Older prefix/suffix combinations (map lookups only)
-        String[] prefixes = legacyPrefixes(type);
-        String[] suffixes = legacySuffixes(type);
-        if (colon > 0) {
-            String ns = trimmed.substring(0, colon).toLowerCase(Locale.ROOT);
-            String path = trimmed.substring(colon + 1).toLowerCase(Locale.ROOT);
-            for (String pfx : prefixes) {
-                for (String sfx : suffixes) {
-                    File f = indexedFile(s, ResourceLocation.tryBuild(ns, sanitizePath(pfx + path + sfx)));
-                    if (f != null && isType(s, type, f)) return f;
+        // 3. Subfolder key lookup in memory ("were/...", "parts/...", "dynamic/...", "entity/...")
+        String clean = cleanKey(trimmed);
+        Map<String, ResourceLocation> typeKeys = s.keys(type);
+        if (!clean.isEmpty() && !typeKeys.isEmpty()) {
+            for (String sub : new String[]{"were/" + clean, "parts/" + clean, "dynamic/" + clean, "entity/" + clean}) {
+                ResourceLocation subLoc = typeKeys.get(sub);
+                if (subLoc != null) {
+                    File f = indexedFile(s, subLoc);
+                    if (f != null) return f;
                 }
             }
         }
-        String clean = cleanKey(trimmed);
-        String baseName = sanitizePath(stripExtension(new File(trimmed).getName()));
-        for (String ns : s.namespaces) {
-            for (String testKey : new String[]{clean, baseName, trimmed}) {
+
+        // 4. Older prefix/suffix combinations for runtime-registered dynamic resources
+        if (!DYNAMIC_RESOURCES.isEmpty()) {
+            String[] prefixes = legacyPrefixes(type);
+            String[] suffixes = legacySuffixes(type);
+            if (colon > 0) {
+                String ns = trimmed.substring(0, colon).toLowerCase(Locale.ROOT);
+                String path = trimmed.substring(colon + 1).toLowerCase(Locale.ROOT);
                 for (String pfx : prefixes) {
                     for (String sfx : suffixes) {
-                        File f = indexedFile(s, ResourceLocation.tryBuild(ns, sanitizePath(pfx + testKey + sfx)));
+                        File f = DYNAMIC_RESOURCES.get(ResourceLocation.tryBuild(ns, sanitizePath(pfx + path + sfx)));
+                        if (f != null && isType(s, type, f)) return f;
+                    }
+                }
+            }
+            for (String ns : s.namespaces) {
+                for (String pfx : prefixes) {
+                    for (String sfx : suffixes) {
+                        File f = DYNAMIC_RESOURCES.get(ResourceLocation.tryBuild(ns, sanitizePath(pfx + clean + sfx)));
                         if (f != null && isType(s, type, f)) return f;
                     }
                 }

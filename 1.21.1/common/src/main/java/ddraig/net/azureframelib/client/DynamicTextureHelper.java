@@ -75,6 +75,11 @@ public class DynamicTextureHelper {
             return fallbackLoc;
         }
 
+        ResourceLocation cached = CACHED_TEXTURES.get(cleanKey);
+        if (cached != null) {
+            return cached;
+        }
+
         // 1. Direct namespaced ResourceLocation in vanilla assets (must end with .png)
         if (path.contains(":") && !path.startsWith("file:") && path.toLowerCase(Locale.ROOT).endsWith(".png")) {
             try {
@@ -93,10 +98,6 @@ public class DynamicTextureHelper {
                     }
                 }
             } catch (Exception ignored) {}
-        }
-
-        if (CACHED_TEXTURES.containsKey(cleanKey)) {
-            return CACHED_TEXTURES.get(cleanKey);
         }
 
         // 2. Search across all registered config folders

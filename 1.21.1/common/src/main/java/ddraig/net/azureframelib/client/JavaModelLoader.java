@@ -28,18 +28,26 @@ import java.util.regex.Pattern;
  */
 public class JavaModelLoader {
     private static final Map<String, LayerDefinition> LAYER_CACHE = new ConcurrentHashMap<>();
+    private static final Map<String, DynamicHierarchicalModel<?>> MODEL_CACHE = new ConcurrentHashMap<>();
     private static final Map<String, Map<String, AnimationDefinition>> ANIM_CACHE = new ConcurrentHashMap<>();
     private static final Set<String> FAILED_MODELS = ConcurrentHashMap.newKeySet();
 
     public static void clearCaches() {
         LAYER_CACHE.clear();
+        MODEL_CACHE.clear();
         ANIM_CACHE.clear();
         FAILED_MODELS.clear();
     }
 
+    @SuppressWarnings("unchecked")
     public static <T extends Entity> HierarchicalModel<T> getModel(String modelId) {
         if (modelId == null || modelId.trim().isEmpty() || FAILED_MODELS.contains(modelId)) {
             return null;
+        }
+
+        DynamicHierarchicalModel<?> cached = MODEL_CACHE.get(modelId);
+        if (cached != null) {
+            return (HierarchicalModel<T>) cached;
         }
 
         if (!LAYER_CACHE.containsKey(modelId)) {
@@ -49,7 +57,9 @@ public class JavaModelLoader {
         LayerDefinition layerDef = LAYER_CACHE.get(modelId);
         if (layerDef != null) {
             ModelPart rootPart = layerDef.bakeRoot();
-            return new DynamicHierarchicalModel<>(rootPart);
+            DynamicHierarchicalModel<T> model = new DynamicHierarchicalModel<>(rootPart);
+            MODEL_CACHE.put(modelId, model);
+            return model;
         }
         return null;
     }
@@ -72,9 +82,6 @@ public class JavaModelLoader {
         }
 
         File file = AzureResourceManager.findJavaModelFile(modelId);
-        if (file == null) {
-            file = AzureResourceManager.findModelFile(modelId);
-        }
         if (file == null || !file.exists()) {
             FAILED_MODELS.add(modelId);
             return;
