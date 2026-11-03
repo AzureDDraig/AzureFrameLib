@@ -40,6 +40,7 @@ def buildVer = "${project.mod_version}-b${buildNumberStr}${project.mod_tag}"
 }
 
 tasks.register("incrementBuildNumber") {
+    onlyIf { !project.hasProperty("skipBuildIncrement") }
     doLast {
         // Check if any task in the execution graph failed
         boolean anyFailure = false

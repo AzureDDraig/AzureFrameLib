@@ -6,6 +6,28 @@ def allVersions = ["1.20.1", "1.21.1", "1.21.11", "26.1", "26.2"]
 def activeVersions = ["1.20.1", "1.21.1"]
 def isWindows = System.getProperty("os.name").toLowerCase().contains("windows")
 
+def buildNumberFile = file("build_number.txt")
+if (!buildNumberFile.exists()) {
+    buildNumberFile.text = "001"
+}
+
+tasks.register("incrementBuildNumber") {
+    doLast {
+        boolean anyFailure = false
+        gradle.taskGraph.allTasks.each { task ->
+            if (task.state.failure != null) {
+                anyFailure = true
+            }
+        }
+        if (!anyFailure) {
+            def current = buildNumberFile.text.trim().toInteger()
+            def next = current + 1
+            buildNumberFile.text = String.format("%03d", next)
+            println "Incremented shared build number to ${String.format('%03d', next)}"
+        }
+    }
+}
+
 allVersions.each { ver ->
     def safeVer = ver.replace('.', '_')
     ["compileJava", "assemble", "build", "publishToMavenLocal", "deployToDev"].each { taskName ->
@@ -14,7 +36,11 @@ allVersions.each { ver ->
             description = "Runs ${taskName} inside ${ver}/"
             workingDir = file(ver)
             def wrapper = file("${ver}/${isWindows ? 'gradlew.bat' : 'gradlew'}").absolutePath
-            commandLine = isWindows ? ["cmd", "/c", wrapper, taskName, "--console=plain"] : [wrapper, taskName, "--console=plain"]
+            def args = [taskName, "--console=plain"]
+            if (taskName == "deployToDev") {
+                args.add("-PskipBuildIncrement=true")
+            }
+            commandLine = isWindows ? (["cmd", "/c", wrapper] + args) : ([wrapper] + args)
         }
     }
 }
@@ -23,6 +49,10 @@ allVersions.each { ver ->
     tasks.register(taskName) {
         group = "azureframelib"
         description = "Runs ${taskName} across active versions (${activeVersions.join(', ')})"
-        dependsOn activeVersions.collect { ver -> "${taskName}_${ver.replace('.', '_')}" }
+        def subTasks = activeVersions.collect { ver -> "${taskName}_${ver.replace('.', '_')}" }
+        dependsOn subTasks
+        if (taskName == "deployToDev") {
+            finalizedBy("incrementBuildNumber")
+        }
     }
 }
