@@ -1,0 +1,97 @@
+loom {
+    forge {
+        mixinConfig "azureframelib.mixins.json"
+        mixinConfig "azureframelib.geckolib.mixins.json"
+    }
+}
+
+sourceSets {
+    main {
+        java {
+            srcDirs = ["src/main/java", "../common/src/main/java"]
+        }
+        resources {
+            srcDirs = ["src/main/resources", "../common/src/main/resources"]
+        }
+    }
+}
+
+configurations {
+    embedLib
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    forge "net.minecraftforge:forge:${rootProject.forge_version}"
+    modCompileOnly "dev.architectury:architectury-neoforge:${rootProject.architectury_api_version}"
+
+    compileOnly "org.xerial:sqlite-jdbc:3.43.0.0"
+    embedLib "org.xerial:sqlite-jdbc:3.43.0.0"
+}
+
+processResources {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    inputs.property 'version', project.version
+
+    filesMatching('META-INF/mods.toml') {
+        expand version: inputs.properties.version
+    }
+
+    from(configurations.embedLib) {
+        into "azureframelib/lib"
+    }
+}
+
+sourcesJar {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+tasks.register("backupToRepo", Copy) {
+    dependsOn sourcesJar, remapJar
+    into "G:/Mod Backup Repository/${rootProject.archives_name}"
+
+    into("Source/${rootProject.minecraft_version}/${project.name}/${rootProject.mod_version}/${rootProject.buildNumberStrVal}") {
+        from sourcesJar.archiveFile
+    }
+
+    into("Build/${rootProject.minecraft_version}/${project.name}/${rootProject.mod_version}/${rootProject.buildNumberStrVal}") {
+        from remapJar.archiveFile
+    }
+
+    onlyIf {
+        (rootProject.buildNumberVal % 2) == 1
+    }
+}
+
+tasks.register("deployToDev", Copy) {
+    dependsOn remapJar, backupToRepo
+    from remapJar.archiveFile
+    into "C:/Users/Ddraig__/curseforge/minecraft/Instances/dev-forge-121/mods"
+
+    doFirst {
+        ["C:/Users/Ddraig__/curseforge/minecraft/Instances/dev-forge-121/mods",
+         "C:/Users/Ddraig__/curseforge/minecraft/Instances/devforge121/mods"].each { path ->
+            def targetDir = file(path)
+            if (targetDir.exists()) {
+                targetDir.listFiles().each { file ->
+                    if (file.name.startsWith("${rootProject.archives_name}-forge-") && file.name.endsWith(".jar")) {
+                        println "Deleting old deploy jar: ${file.name}"
+                        file.delete()
+                    }
+                }
+            }
+        }
+    }
+    doLast {
+        def altDir = file("C:/Users/Ddraig__/curseforge/minecraft/Instances/devforge121/mods")
+        if (altDir.exists()) {
+            copy {
+                from remapJar.archiveFile
+                into altDir
+            }
+        }
+    }
+}

@@ -3,8 +3,8 @@ package ddraig.net.azureframelib.resource;
 import ddraig.net.azureframelib.AzureFrameLib;
 import ddraig.net.azureframelib.config.AzureFrameLibConfig;
 import ddraig.net.azureframelib.resource.AssetSnapshot.Type;
-import dev.architectury.platform.Platform;
-import dev.architectury.utils.Env;
+import ddraig.net.azureframelib.platform.AzurePlatform;
+
 import net.minecraft.resources.ResourceLocation;
 import org.jetbrains.annotations.ApiStatus;
 
@@ -135,7 +135,7 @@ public class AzureResourceManager {
 
     private static void registerDefaultFrameworkFolders() {
         RESOURCE_ROOTS.clear();
-        File configDir = Platform.getConfigFolder().toFile();
+        File configDir = AzurePlatform.getConfigFolder().toFile();
 
         // 1. AzureFrameLib Central Shared Folders
         File azureBase = new File(configDir, "AzureFrameLib");
@@ -467,7 +467,7 @@ public class AzureResourceManager {
         };
         boolean client = false;
         try {
-            client = Platform.getEnvironment() == Env.CLIENT;
+            client = AzurePlatform.isClient();
         } catch (Throwable ignored) {
         }
         if (client) {

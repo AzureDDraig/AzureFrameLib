@@ -7,8 +7,8 @@ import com.google.gson.stream.JsonReader;
 import ddraig.net.azureframelib.model.HitboxSize;
 import ddraig.net.azureframelib.model.ModelHitboxHelper;
 import ddraig.net.azureframelib.resource.AssetSnapshot.Type;
-import dev.architectury.platform.Platform;
-import dev.architectury.utils.Env;
+import ddraig.net.azureframelib.platform.AzurePlatform;
+
 import net.minecraft.resources.ResourceLocation;
 
 import java.io.File;
@@ -271,7 +271,7 @@ public final class AzureAssetIndex {
 
     private static boolean isClient() {
         try {
-            return Platform.getEnvironment() == Env.CLIENT;
+            return AzurePlatform.isClient();
         } catch (Throwable t) {
             return false;
         }

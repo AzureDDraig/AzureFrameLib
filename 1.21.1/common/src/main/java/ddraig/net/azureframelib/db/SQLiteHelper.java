@@ -80,7 +80,7 @@ public class SQLiteHelper {
             if (libFolder != null) {
                 libDir = libFolder.toFile();
             } else {
-                File configDir = dev.architectury.platform.Platform.getConfigFolder().toFile();
+                File configDir = ddraig.net.azureframelib.platform.AzurePlatform.getConfigFolder().toFile();
                 libDir = new File(configDir, "AzureFrameLib/lib");
             }
             if (!libDir.exists()) libDir.mkdirs();
