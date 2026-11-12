@@ -22,12 +22,17 @@ configurations {
     }
 }
 
-dependencies {
-    modImplementation "net.fabricmc:fabric-loader:$rootProject.fabric_loader_version"
-    modImplementation "net.fabricmc.fabric-api:fabric-api:$rootProject.fabric_api_version"
-    modImplementation "dev.architectury:architectury-fabric:$rootProject.architectury_api_version"
+repositories {
+    maven { url 'https://dl.cloudsmith.io/public/geckolib3/geckolib/maven/' }
+}
 
-    common(project(path: ':common', configuration: 'namedElements')) { transitive = false }
+dependencies {
+    implementation "net.fabricmc:fabric-loader:$rootProject.fabric_loader_version"
+    implementation "net.fabricmc.fabric-api:fabric-api:$rootProject.fabric_api_version"
+    implementation "dev.architectury:architectury-fabric:$rootProject.architectury_api_version"
+    compileOnly "com.geckolib:geckolib-fabric-${rootProject.minecraft_version}:${rootProject.geckolib_version}"
+
+    common(project(path: ':common')) { transitive = false }
     shadowBundle project(path: ':common', configuration: 'transformProductionFabric')
 }
 
@@ -39,38 +44,51 @@ processResources {
     }
 }
 
-shadowJar {
-    configurations = [project.configurations.shadowBundle]
-    archiveClassifier = 'dev-shadow'
+jar {
+    archiveClassifier = 'dev'
 }
 
-remapJar {
-    inputFile.set shadowJar.archiveFile
+shadowJar {
+    configurations = [project.configurations.shadowBundle]
+    archiveClassifier = null
+}
+
+assemble.dependsOn shadowJar
+
+configurations {
+    apiElements {
+        outgoing.artifacts.clear()
+        outgoing.artifact(shadowJar)
+    }
+    runtimeElements {
+        outgoing.artifacts.clear()
+        outgoing.artifact(shadowJar)
+    }
 }
 
 tasks.register("backupToRepo", Copy) {
-    dependsOn sourcesJar, shadowJar, remapJar
+    dependsOn sourcesJar, jar, shadowJar
     into "G:/Mod Backup Repository/${rootProject.archives_name}"
-    
+
     into("Source/${rootProject.minecraft_version}/${project.name}/${rootProject.mod_version}/${rootProject.buildNumberStrVal}") {
         from sourcesJar.archiveFile
+        from jar.archiveFile
+    }
+
+    into("Build/${rootProject.minecraft_version}/${project.name}/${rootProject.mod_version}/${rootProject.buildNumberStrVal}") {
         from shadowJar.archiveFile
     }
-    
-    into("Build/${rootProject.minecraft_version}/${project.name}/${rootProject.mod_version}/${rootProject.buildNumberStrVal}") {
-        from remapJar.archiveFile
-    }
-    
+
     onlyIf {
         (rootProject.buildNumberVal % 2) == 1
     }
 }
 
 tasks.register("deployToDev", Copy) {
-    dependsOn remapJar, backupToRepo
-    from remapJar.archiveFile
+    dependsOn shadowJar, backupToRepo
+    from shadowJar.archiveFile
     into "C:/Users/Ddraig__/curseforge/minecraft/Instances/devfabric262/mods"
-    
+
     doFirst {
         def targetDir = file("C:/Users/Ddraig__/curseforge/minecraft/Instances/devfabric262/mods")
         if (targetDir.exists()) {

@@ -1,5 +1,5 @@
 modLoader = "javafml"
-loaderVersion = "[51,)"
+loaderVersion = "[52,)"
 license = "MIT"
 
 [[mods]]
@@ -14,13 +14,20 @@ Shared library and dynamic resource framework for Minecraft mods.
 [[dependencies.azureframelib]]
 modId = "forge"
 mandatory = true
-versionRange = "[51,)"
+versionRange = "[52,)"
 ordering = "NONE"
 side = "BOTH"
 
 [[dependencies.azureframelib]]
 modId = "minecraft"
 mandatory = true
-versionRange = "[1.21,)"
+versionRange = "[1.21.1,)"
 ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.azureframelib]]
+modId = "geckolib"
+mandatory = false
+versionRange = "[4.5,)"
+ordering = "AFTER"
 side = "BOTH"

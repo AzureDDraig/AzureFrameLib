@@ -22,11 +22,13 @@ configurations {
 
 repositories {
     mavenCentral()
+    maven { url 'https://dl.cloudsmith.io/public/geckolib3/geckolib/maven/' }
 }
 
 dependencies {
     forge "net.minecraftforge:forge:${rootProject.forge_version}"
     modCompileOnly "dev.architectury:architectury-neoforge:${rootProject.architectury_api_version}"
+    compileOnly "software.bernie.geckolib:geckolib-forge-${rootProject.minecraft_version}:${rootProject.geckolib_version}"
 
     compileOnly "org.xerial:sqlite-jdbc:3.43.0.0"
     embedLib "org.xerial:sqlite-jdbc:3.43.0.0"

@@ -1,12 +1,13 @@
 package ddraig.net.azureframelib.client;
 
+import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.StringArgumentType;
-import com.mojang.brigadier.context.CommandContext;
+import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import com.mojang.brigadier.builder.RequiredArgumentBuilder;
 import ddraig.net.azureframelib.AzureFrameLib;
 import ddraig.net.azureframelib.resource.AzureAssetIndex;
 import ddraig.net.azureframelib.resource.AzureResourceManager;
 import dev.architectury.event.events.client.ClientCommandRegistrationEvent;
-import dev.architectury.event.events.client.ClientCommandRegistrationEvent.ClientCommandSourceStack;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 
@@ -14,6 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.BiConsumer;
 
 /**
  * Client-only setup: registers the {@code /azureframelib} helper command.
@@ -35,26 +37,44 @@ public final class AzureFrameLibClient {
         if (initialized) return;
         initialized = true;
         try {
-            ClientCommandRegistrationEvent.EVENT.register((dispatcher, context) -> dispatcher.register(
-                    ClientCommandRegistrationEvent.literal("azureframelib")
-                            .then(ClientCommandRegistrationEvent.literal("animations")
-                                    .executes(ctx -> animations(ctx, null))
-                                    .then(ClientCommandRegistrationEvent.argument("filter", StringArgumentType.greedyString())
-                                            .executes(ctx -> animations(ctx, StringArgumentType.getString(ctx, "filter")))))
-                            .then(ClientCommandRegistrationEvent.literal("stats").executes(AzureFrameLibClient::stats))
-                            .then(ClientCommandRegistrationEvent.literal("selftest").executes(AzureFrameLibClient::selftest))
-                            .then(ClientCommandRegistrationEvent.literal("reload").executes(AzureFrameLibClient::reload))
-            ));
-        } catch (Throwable t) {
-            AzureFrameLib.LOGGER.warn("[AzureFrameLib] Could not register the /azureframelib command: {}", t.toString());
+            ArchitecturyRegistrar.register();
+        } catch (Throwable ignored) {
+            // Standalone Forge (without Architectury at runtime) registers via RegisterClientCommandsEvent
         }
     }
 
-    private static void say(CommandContext<ClientCommandSourceStack> ctx, String text) {
-        ctx.getSource().arch$sendSuccess(() -> Component.literal(text), false);
+    private static final class ArchitecturyRegistrar {
+        static void register() {
+            ClientCommandRegistrationEvent.EVENT.register((dispatcher, context) ->
+                    registerBrigadier(
+                            dispatcher,
+                            (src, msg) -> src.arch$sendSuccess(() -> msg, false),
+                            (src, msg) -> src.arch$sendFailure(msg)
+                    )
+            );
+        }
     }
 
-    private static int animations(CommandContext<ClientCommandSourceStack> ctx, String filter) {
+    public static <S> void registerBrigadier(CommandDispatcher<S> dispatcher,
+                                             BiConsumer<S, Component> sendSuccess,
+                                             BiConsumer<S, Component> sendFailure) {
+        dispatcher.register(
+                LiteralArgumentBuilder.<S>literal("azureframelib")
+                        .then(LiteralArgumentBuilder.<S>literal("animations")
+                                .executes(ctx -> animations(ctx.getSource(), null, sendSuccess, sendFailure))
+                                .then(RequiredArgumentBuilder.<S, String>argument("filter", StringArgumentType.greedyString())
+                                        .executes(ctx -> animations(ctx.getSource(), StringArgumentType.getString(ctx, "filter"), sendSuccess, sendFailure))))
+                        .then(LiteralArgumentBuilder.<S>literal("stats").executes(ctx -> stats(ctx.getSource(), sendSuccess, sendFailure)))
+                        .then(LiteralArgumentBuilder.<S>literal("selftest").executes(ctx -> selftest(ctx.getSource(), sendSuccess, sendFailure)))
+                        .then(LiteralArgumentBuilder.<S>literal("reload").executes(ctx -> reload(ctx.getSource(), sendSuccess)))
+        );
+    }
+
+    private static <S> void say(S src, BiConsumer<S, Component> sendSuccess, String text) {
+        sendSuccess.accept(src, Component.literal(text));
+    }
+
+    private static <S> int animations(S src, String filter, BiConsumer<S, Component> sendSuccess, BiConsumer<S, Component> sendFailure) {
         try {
             List<String> lines = AzureAssetIndex.describeAnimationLinks(filter);
             AzureFrameLib.LOGGER.info("[AzureFrameLib] Animation links ({} models{}):", lines.size(),
@@ -62,37 +82,37 @@ public final class AzureFrameLibClient {
             for (String line : lines) AzureFrameLib.LOGGER.info("[AzureFrameLib]   {}", line);
 
             if (lines.isEmpty()) {
-                say(ctx, "No models found" + (filter == null ? "." : " matching \"" + filter + "\"."));
+                say(src, sendSuccess, "No models found" + (filter == null ? "." : " matching \"" + filter + "\"."));
                 return 0;
             }
-            for (int i = 0; i < Math.min(CHAT_LINES, lines.size()); i++) say(ctx, lines.get(i));
+            for (int i = 0; i < Math.min(CHAT_LINES, lines.size()); i++) say(src, sendSuccess, lines.get(i));
             if (lines.size() > CHAT_LINES) {
-                say(ctx, (lines.size() - CHAT_LINES) + " more - see the game log (latest.log) for the full list.");
+                say(src, sendSuccess, (lines.size() - CHAT_LINES) + " more - see the game log (latest.log) for the full list.");
             }
             return lines.size();
         } catch (Throwable t) {
-            ctx.getSource().arch$sendFailure(Component.literal("Could not list animations: " + t));
+            sendFailure.accept(src, Component.literal("Could not list animations: " + t));
             return 0;
         }
     }
 
-    private static int stats(CommandContext<ClientCommandSourceStack> ctx) {
+    private static <S> int stats(S src, BiConsumer<S, Component> sendSuccess, BiConsumer<S, Component> sendFailure) {
         try {
             if (!AzureAssetIndex.isIndexReady()) {
-                say(ctx, "AzureFrameLib is still scanning its folders, try again in a moment.");
+                say(src, sendSuccess, "AzureFrameLib is still scanning its folders, try again in a moment.");
                 return 0;
             }
             int[] c = AzureAssetIndex.getCounts();
-            say(ctx, "AzureFrameLib index #" + AzureAssetIndex.getIndexVersion() + ": " + c[0] + " models, " + c[1]
+            say(src, sendSuccess, "AzureFrameLib index #" + AzureAssetIndex.getIndexVersion() + ": " + c[0] + " models, " + c[1]
                     + " textures, " + c[2] + " animations, " + c[3] + " sounds (" + c[4] + " entries total).");
             return 1;
         } catch (Throwable t) {
-            ctx.getSource().arch$sendFailure(Component.literal("Could not read stats: " + t));
+            sendFailure.accept(src, Component.literal("Could not read stats: " + t));
             return 0;
         }
     }
 
-    private static int selftest(CommandContext<ClientCommandSourceStack> ctx) {
+    private static <S> int selftest(S src, BiConsumer<S, Component> sendSuccess, BiConsumer<S, Component> sendFailure) {
         try {
             Set<String> models = AzureResourceManager.getDiscoveredModels();
             String probe = models.isEmpty() ? "dragon" : models.iterator().next();
@@ -112,20 +132,20 @@ public final class AzureFrameLibClient {
             ClientSuggestionsHelper.addClientTextures(target);
             double suggestMs = (System.nanoTime() - start) / 1_000_000.0;
 
-            say(ctx, String.format("10,000 x findModel(\"%s\"): %.2f ms (%s, goal: under 5 ms)",
+            say(src, sendSuccess, String.format("10,000 x findModel(\"%s\"): %.2f ms (%s, goal: under 5 ms)",
                     probe, lookupMs, found > 0 ? "found" : "not found"));
-            say(ctx, String.format("addClientTextures into a 5,000 entry list: %.2f ms (goal: under 50 ms)", suggestMs));
+            say(src, sendSuccess, String.format("addClientTextures into a 5,000 entry list: %.2f ms (goal: under 50 ms)", suggestMs));
             AzureFrameLib.LOGGER.info("[AzureFrameLib] Self-test: findModel x10000 = {} ms, addClientTextures(5000) = {} ms",
                     String.format("%.2f", lookupMs), String.format("%.2f", suggestMs));
             return 1;
         } catch (Throwable t) {
-            ctx.getSource().arch$sendFailure(Component.literal("Self-test failed: " + t));
+            sendFailure.accept(src, Component.literal("Self-test failed: " + t));
             return 0;
         }
     }
 
-    private static int reload(CommandContext<ClientCommandSourceStack> ctx) {
-        say(ctx, "Reloading resources (same as F3+T)...");
+    private static <S> int reload(S src, BiConsumer<S, Component> sendSuccess) {
+        say(src, sendSuccess, "Reloading resources (same as F3+T)...");
         Minecraft mc = Minecraft.getInstance();
         mc.execute(mc::reloadResourcePacks);
         return 1;

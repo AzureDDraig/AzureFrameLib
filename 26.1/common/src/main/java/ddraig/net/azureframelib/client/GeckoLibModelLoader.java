@@ -13,22 +13,22 @@ import net.minecraft.resources.Identifier;
 
 import java.io.File;
 import java.io.StringReader;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 
 /**
  * Universal on-the-fly dynamic GeckoLib model and animation loader.
  * Dynamically parses Blockbench GeckoLib models and animations from disk files,
- * bakes them, and hot-injects them directly into GeckoLibCache so any entity
+ * bakes them, and hot-injects them directly into GeckoLib's cache so any entity
  * or renderer in any framework mod can use them immediately.
  * <p>
- * Files are found through AzureFrameLib's in-memory index. "Not found" answers are remembered
- * until the index changes, so missing models cost almost nothing per frame.
+ * Supports GeckoLib 4.x (GeckoLibCache), 5.4 (software.bernie.geckolib.cache.GeckoLibResources)
+ * and 5.5+ (com.geckolib.cache.GeckoLibResources).
  */
 public class GeckoLibModelLoader {
 
@@ -36,8 +36,8 @@ public class GeckoLibModelLoader {
     private static final Map<Identifier, Object> FALLBACK_ANIMATIONS = new ConcurrentHashMap<>();
     private static final Map<File, Object> BAKED_MODELS_BY_FILE = new ConcurrentHashMap<>();
     private static final Map<File, Object> BAKED_ANIMATIONS_BY_FILE = new ConcurrentHashMap<>();
-    private static final java.util.Set<Identifier> FAILED_MODELS = Collections.newSetFromMap(new ConcurrentHashMap<>());
-    private static final java.util.Set<Identifier> FAILED_ANIMATIONS = Collections.newSetFromMap(new ConcurrentHashMap<>());
+    private static final Set<Identifier> FAILED_MODELS = Collections.newSetFromMap(new ConcurrentHashMap<>());
+    private static final Set<Identifier> FAILED_ANIMATIONS = Collections.newSetFromMap(new ConcurrentHashMap<>());
     private static volatile Object emptyBakedModel;
     private static volatile Object emptyBakedAnimations;
     private static volatile int seenIndexVersion = -1;
@@ -78,16 +78,25 @@ public class GeckoLibModelLoader {
     }
 
     // ------------------------------------------------------------------
-    // Cached GeckoLib reflection (looked up once)
+    // Cached GeckoLib reflection (supports 4.x, 5.4, and 5.5+)
     // ------------------------------------------------------------------
 
     private static final class GL {
         static final boolean PRESENT;
+        static int mode; // 4 = GeckoLib 4.x, 54 = GeckoLib 5.4, 55 = GeckoLib 5.5+
         static Class<?> cacheClass;
         static Method getBakedModels;
         static Method getBakedAnimations;
         static Field modelsField;
         static Field animationsField;
+
+        // GeckoLib 5.x wrapper records (BakedModelCache / BakedAnimationCache)
+        static Method modelCacheMapMethod;
+        static Method animCacheMapMethod;
+        static Constructor<?> modelCacheCtor;
+        static Constructor<?> animCacheCtor;
+
+        // GeckoLib 4.x & 5.4 baking
         static Object geoGson;
         static Method fromJsonElement;
         static Class<?> modelClass;
@@ -97,8 +106,19 @@ public class GeckoLibModelLoader {
         static Method factoryForNamespace;
         static Method constructGeoModel;
 
+        // GeckoLib 5.5+ baking (GeckoLibGsonLoader)
+        static Object gsonLoader;
+        static Method gsonBakeModel;
+        static Method gsonBakeAnimations;
+        static Object mathParser;
+
+        // BakedAnimations short-name aliasing
+        static Method bakedAnimsMapGetter;
+        static Constructor<?> bakedAnimsCtor;
+
         static {
-            boolean ok;
+            boolean ok = false;
+            // 1. Try GeckoLib 4.x (software.bernie.geckolib.cache.GeckoLibCache)
             try {
                 cacheClass = Class.forName("software.bernie.geckolib.cache.GeckoLibCache");
                 getBakedModels = cacheClass.getMethod("getBakedModels");
@@ -118,9 +138,80 @@ public class GeckoLibModelLoader {
                 Class<?> factory = Class.forName("software.bernie.geckolib.loading.object.BakedModelFactory");
                 factoryForNamespace = factory.getMethod("getForNamespace", String.class);
                 constructGeoModel = factory.getMethod("constructGeoModel", geometryTreeClass);
+                bakedAnimsMapGetter = bakedAnimationsClass.getMethod("animations");
+                bakedAnimsCtor = bakedAnimationsClass.getConstructor(Map.class);
+                mode = 4;
                 ok = true;
-            } catch (Throwable t) {
-                ok = false;
+            } catch (Throwable ignored) {
+            }
+
+            // 2. Try GeckoLib 5.4 (software.bernie.geckolib.cache.GeckoLibResources)
+            if (!ok) {
+                try {
+                    cacheClass = Class.forName("software.bernie.geckolib.cache.GeckoLibResources");
+                    getBakedModels = cacheClass.getMethod("getBakedModels");
+                    getBakedAnimations = cacheClass.getMethod("getBakedAnimations");
+                    modelsField = cacheClass.getDeclaredField("MODELS");
+                    modelsField.setAccessible(true);
+                    animationsField = cacheClass.getDeclaredField("ANIMATIONS");
+                    animationsField.setAccessible(true);
+
+                    Class<?> modelCacheCls = Class.forName("software.bernie.geckolib.cache.BakedModelCache");
+                    Class<?> animCacheCls = Class.forName("software.bernie.geckolib.cache.BakedAnimationCache");
+                    modelCacheMapMethod = modelCacheCls.getMethod("cache");
+                    animCacheMapMethod = animCacheCls.getMethod("cache");
+                    modelCacheCtor = modelCacheCls.getConstructor(Map.class);
+                    animCacheCtor = animCacheCls.getConstructor(Map.class);
+
+                    geoGson = cacheClass.getField("GSON").get(null);
+                    fromJsonElement = geoGson.getClass().getMethod("fromJson", JsonElement.class, Class.class);
+                    modelClass = Class.forName("software.bernie.geckolib.loading.json.raw.Model");
+                    bakedAnimationsClass = Class.forName("software.bernie.geckolib.loading.object.BakedAnimations");
+                    geometryTreeClass = Class.forName("software.bernie.geckolib.loading.object.GeometryTree");
+                    geometryFromModel = geometryTreeClass.getMethod("fromModel", modelClass);
+                    Class<?> factory = Class.forName("software.bernie.geckolib.loading.object.BakedModelFactory");
+                    factoryForNamespace = factory.getMethod("getForNamespace", String.class);
+                    constructGeoModel = factory.getMethod("constructGeoModel", geometryTreeClass);
+                    bakedAnimsMapGetter = bakedAnimationsClass.getMethod("animations");
+                    bakedAnimsCtor = bakedAnimationsClass.getConstructor(Map.class);
+                    mode = 54;
+                    ok = true;
+                } catch (Throwable ignored) {
+                }
+            }
+
+            // 3. Try GeckoLib 5.5+ (com.geckolib.cache.GeckoLibResources)
+            if (!ok) {
+                try {
+                    cacheClass = Class.forName("com.geckolib.cache.GeckoLibResources");
+                    getBakedModels = cacheClass.getMethod("getBakedModels");
+                    getBakedAnimations = cacheClass.getMethod("getBakedAnimations");
+                    modelsField = cacheClass.getDeclaredField("MODELS");
+                    modelsField.setAccessible(true);
+                    animationsField = cacheClass.getDeclaredField("ANIMATIONS");
+                    animationsField.setAccessible(true);
+
+                    Class<?> modelCacheCls = Class.forName("com.geckolib.cache.BakedModelCache");
+                    Class<?> animCacheCls = Class.forName("com.geckolib.cache.BakedAnimationCache");
+                    modelCacheMapMethod = modelCacheCls.getMethod("cache");
+                    animCacheMapMethod = animCacheCls.getMethod("cache");
+                    modelCacheCtor = modelCacheCls.getConstructor(Map.class);
+                    animCacheCtor = animCacheCls.getConstructor(Map.class);
+
+                    Class<?> loaderCls = Class.forName("com.geckolib.loading.loader.GeckoLibGsonLoader");
+                    gsonLoader = loaderCls.getConstructor().newInstance();
+                    Class<?> mathParserCls = Class.forName("com.geckolib.loading.math.MathParser");
+                    mathParser = mathParserCls.getConstructor().newInstance();
+                    gsonBakeModel = loaderCls.getMethod("bakeGeckoLibModelFile", Identifier.class, JsonObject.class);
+                    gsonBakeAnimations = loaderCls.getMethod("bakeGeckoLibAnimationsFile", Identifier.class, JsonObject.class, mathParserCls);
+
+                    bakedAnimationsClass = Class.forName("com.geckolib.cache.animation.BakedAnimations");
+                    bakedAnimsMapGetter = bakedAnimationsClass.getMethod("animations");
+                    bakedAnimsCtor = bakedAnimationsClass.getConstructor(Map.class);
+                    mode = 55;
+                    ok = true;
+                } catch (Throwable ignored) {
+                }
             }
             PRESENT = ok;
         }
@@ -128,7 +219,11 @@ public class GeckoLibModelLoader {
         static Map<?, ?> models() {
             if (!PRESENT) return null;
             try {
-                return (Map<?, ?>) getBakedModels.invoke(null);
+                Object res = getBakedModels.invoke(null);
+                if (res == null) return null;
+                if (res instanceof Map<?, ?> m) return m;
+                if (modelCacheMapMethod != null) return (Map<?, ?>) modelCacheMapMethod.invoke(res);
+                return null;
             } catch (Throwable t) {
                 return null;
             }
@@ -137,9 +232,77 @@ public class GeckoLibModelLoader {
         static Map<?, ?> animations() {
             if (!PRESENT) return null;
             try {
-                return (Map<?, ?>) getBakedAnimations.invoke(null);
+                Object res = getBakedAnimations.invoke(null);
+                if (res == null) return null;
+                if (res instanceof Map<?, ?> m) return m;
+                if (animCacheMapMethod != null) return (Map<?, ?>) animCacheMapMethod.invoke(res);
+                return null;
             } catch (Throwable t) {
                 return null;
+            }
+        }
+
+        static Object bakeModel(Identifier location, JsonObject root) throws Exception {
+            Identifier loc = location != null ? location : Identifier.tryBuild(AzureFrameLib.MOD_ID, "geo/model.geo.json");
+            if (mode == 55) {
+                return gsonBakeModel.invoke(gsonLoader, loc, root);
+            }
+            Object rawModel = fromJsonElement.invoke(geoGson, root, modelClass);
+            if (rawModel == null) return null;
+            Object tree = geometryFromModel.invoke(null, rawModel);
+            if (tree == null) return null;
+            String ns = loc != null ? loc.getNamespace() : AzureFrameLib.MOD_ID;
+            Object factoryObj = factoryForNamespace.invoke(null, ns);
+            return constructGeoModel.invoke(factoryObj, tree);
+        }
+
+        static Object bakeAnimations(Identifier location, JsonObject root) throws Exception {
+            Identifier loc = location != null ? location : Identifier.tryBuild(AzureFrameLib.MOD_ID, "animations/anim.animation.json");
+            Object baked;
+            if (mode == 55) {
+                JsonObject wrapper;
+                if (root.has("animations") && root.get("animations").isJsonObject()) {
+                    wrapper = root;
+                } else {
+                    wrapper = new JsonObject();
+                    wrapper.addProperty("format_version", "1.8.0");
+                    wrapper.add("animations", root);
+                }
+                baked = gsonBakeAnimations.invoke(gsonLoader, loc, wrapper, mathParser);
+            } else {
+                JsonObject animObj = root.has("animations") && root.get("animations").isJsonObject()
+                        ? root.getAsJsonObject("animations") : root;
+                baked = fromJsonElement.invoke(geoGson, animObj, bakedAnimationsClass);
+            }
+            return addShortAliases(baked);
+        }
+
+        @SuppressWarnings("unchecked")
+        private static Object addShortAliases(Object baked) {
+            if (baked == null || !AzureFrameLibConfig.get().addShortAnimationNames
+                    || bakedAnimsMapGetter == null || bakedAnimsCtor == null) {
+                return baked;
+            }
+            try {
+                Map<String, Object> animMap = (Map<String, Object>) bakedAnimsMapGetter.invoke(baked);
+                if (animMap == null || animMap.isEmpty()) return baked;
+                Map<String, Object> aliased = new LinkedHashMap<>(animMap);
+                for (Map.Entry<String, Object> e : animMap.entrySet()) {
+                    String k = e.getKey();
+                    Object v = e.getValue();
+                    if (k == null || v == null) continue;
+                    aliased.putIfAbsent(k.toLowerCase(Locale.ROOT), v);
+                    int dot = k.lastIndexOf('.');
+                    if (dot >= 0 && dot < k.length() - 1) {
+                        String shortName = k.substring(dot + 1);
+                        aliased.putIfAbsent(shortName, v);
+                        aliased.putIfAbsent(shortName.toLowerCase(Locale.ROOT), v);
+                    }
+                }
+                if (aliased.size() == animMap.size()) return baked;
+                return bakedAnimsCtor.newInstance(Collections.unmodifiableMap(aliased));
+            } catch (Throwable ignored) {
+                return baked;
             }
         }
     }
@@ -294,7 +457,7 @@ public class GeckoLibModelLoader {
     }
 
     /**
-     * Ensures that a model in a managed namespace is present in GeckoLibCache before GeoModel.getBakedModel reads it.
+     * Ensures that a model in a managed namespace is present in GeckoLib's cache before GeoModel.getBakedModel reads it.
      * If the model file is missing or corrupt, a tiny shared empty model is placed under that key so GeckoLib never crashes.
      */
     public static void ensureModelInCache(Identifier location) {
@@ -304,13 +467,12 @@ public class GeckoLibModelLoader {
         if (getOrLoadBakedModel(location) != null) return;
         Object empty = getOrCreateEmptyModel();
         if (empty != null) {
-            Map<Identifier, Object> map = ensureModifiableModelMap();
-            if (map != null) map.putIfAbsent(location, empty);
+            injectModel(location, empty);
         }
     }
 
     /**
-     * Ensures that animations in a managed namespace are present in GeckoLibCache before GeoModel.getAnimation reads them.
+     * Ensures that animations in a managed namespace are present in GeckoLib's cache before GeoModel reads them.
      * If the animation file is missing or corrupt, a shared empty BakedAnimations is placed under that key so GeckoLib never crashes.
      */
     public static void ensureAnimationInCache(Identifier location) {
@@ -320,8 +482,7 @@ public class GeckoLibModelLoader {
         if (getOrLoadBakedAnimations(location) != null) return;
         Object empty = getOrCreateEmptyAnimations();
         if (empty != null) {
-            Map<Identifier, Object> map = ensureModifiableAnimationMap();
-            if (map != null) map.putIfAbsent(location, empty);
+            injectAnimations(location, empty);
         }
     }
 
@@ -332,10 +493,7 @@ public class GeckoLibModelLoader {
             Identifier dummy = Identifier.tryBuild(AzureFrameLib.MOD_ID, "geo/empty.geo.json");
             String json = new String(AzureResourceManager.getEmptyGeoModelFallbackBytes(dummy), StandardCharsets.UTF_8);
             JsonElement parsed = parseLenient(json);
-            Object rawModel = GL.fromJsonElement.invoke(GL.geoGson, parsed.getAsJsonObject(), GL.modelClass);
-            Object tree = GL.geometryFromModel.invoke(null, rawModel);
-            Object factoryObj = GL.factoryForNamespace.invoke(null, AzureFrameLib.MOD_ID);
-            cached = GL.constructGeoModel.invoke(factoryObj, tree);
+            cached = GL.bakeModel(dummy, parsed.getAsJsonObject());
             emptyBakedModel = cached;
             return cached;
         } catch (Throwable t) {
@@ -347,8 +505,11 @@ public class GeckoLibModelLoader {
         Object cached = emptyBakedAnimations;
         if (cached != null) return cached;
         try {
+            Identifier dummy = Identifier.tryBuild(AzureFrameLib.MOD_ID, "animations/empty.animation.json");
             JsonObject emptyObj = new JsonObject();
-            cached = GL.fromJsonElement.invoke(GL.geoGson, emptyObj, GL.bakedAnimationsClass);
+            emptyObj.addProperty("format_version", "1.8.0");
+            emptyObj.add("animations", new JsonObject());
+            cached = GL.bakeAnimations(dummy, emptyObj);
             emptyBakedAnimations = cached;
             return cached;
         } catch (Throwable t) {
@@ -416,7 +577,6 @@ public class GeckoLibModelLoader {
 
         JsonObject root;
         try {
-            // Validate JSON
             JsonElement parsed = parseLenient(jsonContent);
             if (!parsed.isJsonObject()) return null;
             root = parsed.getAsJsonObject();
@@ -445,7 +605,6 @@ public class GeckoLibModelLoader {
         }
 
         if (!GL.PRESENT) {
-            // Headless / fallback environment
             if (location != null) {
                 FALLBACK_MODELS.put(location, root);
             }
@@ -453,16 +612,7 @@ public class GeckoLibModelLoader {
         }
 
         try {
-            Object rawModel = GL.fromJsonElement.invoke(GL.geoGson, root, GL.modelClass);
-            if (rawModel == null) return null;
-
-            Object tree = GL.geometryFromModel.invoke(null, rawModel);
-            if (tree == null) return null;
-
-            String ns = (location != null) ? location.getNamespace() : AzureFrameLib.MOD_ID;
-            Object factoryObj = GL.factoryForNamespace.invoke(null, ns);
-            Object bakedGeoModel = GL.constructGeoModel.invoke(factoryObj, tree);
-
+            Object bakedGeoModel = GL.bakeModel(location, root);
             if (bakedGeoModel != null && location != null) {
                 injectModel(location, bakedGeoModel);
             }
@@ -501,7 +651,6 @@ public class GeckoLibModelLoader {
             AzureFrameLib.LOGGER.warn("[AzureFrameLib] Animation JSON for {} could not be read: {}", location, t.getMessage());
             return null;
         }
-        JsonObject animObj = root.has("animations") && root.get("animations").isJsonObject() ? root.getAsJsonObject("animations") : root;
 
         if (!GL.PRESENT) {
             if (location != null) {
@@ -511,8 +660,7 @@ public class GeckoLibModelLoader {
         }
 
         try {
-            Object bakedAnimObj = GL.fromJsonElement.invoke(GL.geoGson, animObj, GL.bakedAnimationsClass);
-
+            Object bakedAnimObj = GL.bakeAnimations(location, root);
             if (bakedAnimObj != null && location != null) {
                 injectAnimations(location, bakedAnimObj);
             }
@@ -531,6 +679,22 @@ public class GeckoLibModelLoader {
         return JsonParser.parseReader(reader);
     }
 
+    private static String stripGeoSuffix(String p) {
+        if (p.endsWith(".geo.json")) return p.substring(0, p.length() - 9);
+        if (p.endsWith(".json")) return p.substring(0, p.length() - 5);
+        if (p.endsWith(".geo")) return p.substring(0, p.length() - 4);
+        return p;
+    }
+
+    private static String stripAnimSuffix(String p) {
+        if (p.endsWith(".animation.json")) return p.substring(0, p.length() - 15);
+        if (p.endsWith(".animations.json")) return p.substring(0, p.length() - 16);
+        if (p.endsWith(".json")) return p.substring(0, p.length() - 5);
+        if (p.endsWith(".animation")) return p.substring(0, p.length() - 10);
+        if (p.endsWith(".animations")) return p.substring(0, p.length() - 11);
+        return p;
+    }
+
     public static void injectModel(Identifier location, Object bakedModel) {
         if (location == null || bakedModel == null) return;
         Map<Identifier, Object> map = ensureModifiableModelMap();
@@ -540,23 +704,28 @@ public class GeckoLibModelLoader {
 
         String ns = location.getNamespace();
         String path = location.getPath();
+        if (path.startsWith("geckolib/")) path = path.substring(9);
 
-        if (path.startsWith("models/")) {
-            addTarget(targets, ns, "geo/" + path.substring(7));
-            addTarget(targets, ns, path.substring(7));
-        } else if (path.startsWith("geo/")) {
-            addTarget(targets, ns, "models/" + path.substring(4));
-            addTarget(targets, ns, path.substring(4));
-        } else {
-            addTarget(targets, ns, "geo/" + path);
-            addTarget(targets, ns, "models/" + path);
+        String rel = path.startsWith("models/") ? path.substring(7)
+                : path.startsWith("geo/") ? path.substring(4) : path;
+        String bare = stripGeoSuffix(rel);
+
+        for (String form : new String[]{
+                rel, "geo/" + rel, "models/" + rel,
+                bare, "geo/" + bare, "models/" + bare,
+                bare + ".geo.json", "geo/" + bare + ".geo.json", "models/" + bare + ".geo.json"
+        }) {
+            addTarget(targets, ns, form);
         }
 
-        if (path.contains("/")) {
-            String base = path.substring(path.lastIndexOf('/') + 1);
-            addTarget(targets, ns, base);
-            addTarget(targets, ns, "geo/" + base);
-            addTarget(targets, ns, "models/" + base);
+        if (bare.contains("/")) {
+            String baseBare = bare.substring(bare.lastIndexOf('/') + 1);
+            for (String form : new String[]{
+                    baseBare, "geo/" + baseBare, "models/" + baseBare,
+                    baseBare + ".geo.json", "geo/" + baseBare + ".geo.json", "models/" + baseBare + ".geo.json"
+            }) {
+                addTarget(targets, ns, form);
+            }
         }
 
         // Also register under azureframelib
@@ -588,17 +757,27 @@ public class GeckoLibModelLoader {
 
         String ns = location.getNamespace();
         String path = location.getPath();
+        if (path.startsWith("geckolib/")) path = path.substring(9);
 
-        if (path.startsWith("animations/")) {
-            addTarget(targets, ns, path.substring(11));
-        } else {
-            addTarget(targets, ns, "animations/" + path);
+        String rel = path.startsWith("animations/") ? path.substring(11) : path;
+        String bare = stripAnimSuffix(rel);
+
+        for (String form : new String[]{
+                rel, "animations/" + rel,
+                bare, "animations/" + bare,
+                bare + ".animation.json", "animations/" + bare + ".animation.json"
+        }) {
+            addTarget(targets, ns, form);
         }
 
-        if (path.contains("/")) {
-            String base = path.substring(path.lastIndexOf('/') + 1);
-            addTarget(targets, ns, base);
-            addTarget(targets, ns, "animations/" + base);
+        if (bare.contains("/")) {
+            String baseBare = bare.substring(bare.lastIndexOf('/') + 1);
+            for (String form : new String[]{
+                    baseBare, "animations/" + baseBare,
+                    baseBare + ".animation.json", "animations/" + baseBare + ".animation.json"
+            }) {
+                addTarget(targets, ns, form);
+            }
         }
 
         Set<Identifier> commonTargets = new HashSet<>();
@@ -683,7 +862,6 @@ public class GeckoLibModelLoader {
                     out.putAll(copy);
                     break;
                 } catch (ConcurrentModificationException ignored) {
-                    // GeckoLib's map changed while copying; try again.
                 }
             }
         }
@@ -729,18 +907,27 @@ public class GeckoLibModelLoader {
     }
 
     public static Map<Identifier, Object> ensureModifiableModelMap() {
-        return ensureModifiableMap(GL.modelsField, true);
+        return ensureModifiableMap(GL.modelsField, GL.modelCacheMapMethod, GL.modelCacheCtor, true);
     }
 
     public static Map<Identifier, Object> ensureModifiableAnimationMap() {
-        return ensureModifiableMap(GL.animationsField, false);
+        return ensureModifiableMap(GL.animationsField, GL.animCacheMapMethod, GL.animCacheCtor, false);
     }
 
     @SuppressWarnings("unchecked")
-    private static synchronized Map<Identifier, Object> ensureModifiableMap(Field field, boolean modelMap) {
+    private static synchronized Map<Identifier, Object> ensureModifiableMap(
+            Field field, Method cacheMapGetter, Constructor<?> cacheCtor, boolean modelMap) {
         if (!GL.PRESENT || field == null) return null;
         try {
-            Map<?, ?> map = (Map<?, ?>) field.get(null);
+            Object holder = field.get(null);
+            Map<?, ?> map;
+            if (holder instanceof Map<?, ?> m) {
+                map = m;
+            } else if (holder != null && cacheMapGetter != null) {
+                map = (Map<?, ?>) cacheMapGetter.invoke(holder);
+            } else {
+                map = null;
+            }
 
             if (!(map instanceof LazyGeckoMap)) {
                 LazyGeckoMap mutableMap = new LazyGeckoMap(modelMap);
@@ -751,7 +938,11 @@ public class GeckoLibModelLoader {
                         }
                     }
                 }
-                field.set(null, mutableMap);
+                if (cacheCtor != null) {
+                    field.set(null, cacheCtor.newInstance(mutableMap));
+                } else {
+                    field.set(null, mutableMap);
+                }
                 return mutableMap;
             }
             return (Map<Identifier, Object>) map;

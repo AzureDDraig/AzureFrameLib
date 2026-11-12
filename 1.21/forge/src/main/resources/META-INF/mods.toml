@@ -24,3 +24,10 @@ mandatory = true
 versionRange = "[1.21,)"
 ordering = "NONE"
 side = "BOTH"
+
+[[dependencies.azureframelib]]
+modId = "geckolib"
+mandatory = false
+versionRange = "[4.5,)"
+ordering = "AFTER"
+side = "BOTH"

@@ -1,21 +1,21 @@
 package ddraig.net.azureframelib.client;
 
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 
 /**
  * Shared GUI rendering utilities.
  */
 public class UIHelper {
 
-    public static void drawOutline(GuiGraphics graphics, int x, int y, int width, int height, int color) {
+    public static void drawOutline(GuiGraphicsExtractor graphics, int x, int y, int width, int height, int color) {
         graphics.fill(x, y, x + width, y + 1, color);
         graphics.fill(x, y + height - 1, x + width, y + height, color);
         graphics.fill(x, y + 1, x + 1, y + height - 1, color);
         graphics.fill(x + width - 1, y + 1, x + width, y + height - 1, color);
     }
 
-    public static void drawPanel(GuiGraphics graphics, int x, int y, int width, int height, int bgColor, int borderColor) {
+    public static void drawPanel(GuiGraphicsExtractor graphics, int x, int y, int width, int height, int bgColor, int borderColor) {
         graphics.fill(x, y, x + width, y + height, bgColor);
         drawOutline(graphics, x, y, width, height, borderColor);
     }

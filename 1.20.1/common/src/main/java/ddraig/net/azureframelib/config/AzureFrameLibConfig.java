@@ -2,7 +2,7 @@ package ddraig.net.azureframelib.config;
 
 import ddraig.net.azureframelib.AzureFrameLib;
 import ddraig.net.azureframelib.util.ConfigHelper;
-import dev.architectury.platform.Platform;
+import ddraig.net.azureframelib.platform.AzurePlatform;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -43,7 +43,7 @@ public final class AzureFrameLibConfig {
     /** Loads (or creates) the config file. Safe to call more than once. */
     public static synchronized void load() {
         try {
-            File file = new File(Platform.getConfigFolder().toFile(), "AzureFrameLib/azureframelib.json");
+            File file = new File(AzurePlatform.getConfigFolder().toFile(), "AzureFrameLib/azureframelib.json");
             AzureFrameLibConfig loaded = ConfigHelper.loadConfig(file, AzureFrameLibConfig.class, AzureFrameLibConfig::new);
             if (loaded.hitboxBoneNames == null) {
                 loaded.hitboxBoneNames = new ArrayList<>();

@@ -8,10 +8,9 @@ import java.lang.reflect.Method;
 /**
  * Optional extra check that a model file can actually be read by GeckoLib.
  * <p>
- * GeckoLib loads every model in one batch, and a single file it can't read stops ALL
- * GeckoLib models and animations from loading (for every mod). Catching those files
- * here keeps them out of the shared resource pack. Uses reflection so AzureFrameLib
- * still works when GeckoLib isn't installed.
+ * Catching malformed model files here keeps them out of the shared resource pack.
+ * Uses reflection so AzureFrameLib still works when GeckoLib isn't installed, and
+ * supports GeckoLib 4.x, 5.4 (software.bernie.geckolib) and 5.5+ (com.geckolib).
  */
 final class GeckoLibValidation {
 
@@ -43,13 +42,34 @@ final class GeckoLibValidation {
         if (initialized) return fromJsonElement != null;
         synchronized (GeckoLibValidation.class) {
             if (initialized) return fromJsonElement != null;
+            // Try GeckoLib 4.x (JsonUtil.GEO_GSON)
             try {
                 Class<?> jsonUtil = Class.forName("software.bernie.geckolib.util.JsonUtil");
                 geoGson = jsonUtil.getField("GEO_GSON").get(null);
                 modelClass = Class.forName("software.bernie.geckolib.loading.json.raw.Model");
                 fromJsonElement = geoGson.getClass().getMethod("fromJson", JsonElement.class, Class.class);
-            } catch (Throwable t) {
-                fromJsonElement = null;
+            } catch (Throwable ignored) {
+            }
+            // Try GeckoLib 5.4 (GeckoLibResources.GSON)
+            if (fromJsonElement == null) {
+                try {
+                    Class<?> resCls = Class.forName("software.bernie.geckolib.cache.GeckoLibResources");
+                    geoGson = resCls.getField("GSON").get(null);
+                    modelClass = Class.forName("software.bernie.geckolib.loading.json.raw.Model");
+                    fromJsonElement = geoGson.getClass().getMethod("fromJson", JsonElement.class, Class.class);
+                } catch (Throwable ignored) {
+                }
+            }
+            // Try GeckoLib 5.5+ (com.geckolib.loading.definition.geometry.Geometry.GSON)
+            if (fromJsonElement == null) {
+                try {
+                    Class<?> geomCls = Class.forName("com.geckolib.loading.definition.geometry.Geometry");
+                    geoGson = geomCls.getField("GSON").get(null);
+                    modelClass = geomCls;
+                    fromJsonElement = geoGson.getClass().getMethod("fromJson", JsonElement.class, Class.class);
+                } catch (Throwable ignored) {
+                    fromJsonElement = null;
+                }
             }
             initialized = true;
             return fromJsonElement != null;

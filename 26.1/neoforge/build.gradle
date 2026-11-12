@@ -2,13 +2,17 @@ plugins {
     id 'com.gradleup.shadow'
 }
 
+repositories {
+    maven {
+        name = 'NeoForged'
+        url = 'https://maven.neoforged.net/releases'
+    }
+    maven { url 'https://dl.cloudsmith.io/public/geckolib3/geckolib/maven/' }
+}
+
 architectury {
     platformSetupLoomIde()
     neoForge()
-}
-
-loom {
-    neoForge {}
 }
 
 configurations {
@@ -28,38 +32,51 @@ configurations {
 
 dependencies {
     neoForge "net.neoforged:neoforge:$rootProject.neoforge_version"
-    modImplementation "dev.architectury:architectury-neoforge:$rootProject.architectury_api_version"
+    implementation "dev.architectury:architectury-neoforge:$rootProject.architectury_api_version"
+    compileOnly "com.geckolib:geckolib-neoforge-${rootProject.minecraft_version}:${rootProject.geckolib_version}"
 
-    common(project(path: ':common', configuration: 'namedElements')) { transitive = false }
+    common(project(path: ':common')) { transitive = false }
     shadowBundle project(path: ':common', configuration: 'transformProductionNeoForge')
 }
 
 processResources {
     inputs.property 'version', project.version
-
     filesMatching('META-INF/neoforge.mods.toml') {
         expand version: inputs.properties.version
     }
 }
 
-shadowJar {
-    configurations = [project.configurations.shadowBundle]
-    archiveClassifier = 'dev-shadow'
+jar {
+    archiveClassifier = 'dev'
 }
 
-remapJar {
-    inputFile.set shadowJar.archiveFile
+shadowJar {
+    configurations = [project.configurations.shadowBundle]
+    archiveClassifier = null
+}
+
+assemble.dependsOn shadowJar
+
+configurations {
+    apiElements {
+        outgoing.artifacts.clear()
+        outgoing.artifact(shadowJar)
+    }
+    runtimeElements {
+        outgoing.artifacts.clear()
+        outgoing.artifact(shadowJar)
+    }
 }
 
 tasks.register("backupToRepo", Copy) {
-    dependsOn sourcesJar, shadowJar, remapJar
+    dependsOn sourcesJar, jar, shadowJar
     into "G:/Mod Backup Repository/${rootProject.archives_name}"
     into("Source/${rootProject.minecraft_version}/${project.name}/${rootProject.mod_version}/${rootProject.buildNumberStrVal}") {
         from sourcesJar.archiveFile
-        from shadowJar.archiveFile
+        from jar.archiveFile
     }
     into("Build/${rootProject.minecraft_version}/${project.name}/${rootProject.mod_version}/${rootProject.buildNumberStrVal}") {
-        from remapJar.archiveFile
+        from shadowJar.archiveFile
     }
     onlyIf {
         (rootProject.buildNumberVal % 2) == 1
@@ -67,9 +84,10 @@ tasks.register("backupToRepo", Copy) {
 }
 
 tasks.register("deployToDev", Copy) {
-    dependsOn remapJar, backupToRepo
-    from remapJar.archiveFile
+    dependsOn shadowJar, backupToRepo
+    from shadowJar.archiveFile
     into "C:/Users/Ddraig__/curseforge/minecraft/Instances/dev-neoforge-261/mods"
+
     doFirst {
         def targetDir = file("C:/Users/Ddraig__/curseforge/minecraft/Instances/dev-neoforge-261/mods")
         if (targetDir.exists()) {

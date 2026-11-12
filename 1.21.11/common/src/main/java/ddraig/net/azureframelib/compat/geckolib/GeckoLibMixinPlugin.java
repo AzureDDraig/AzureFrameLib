@@ -77,11 +77,14 @@ public class GeckoLibMixinPlugin implements IMixinConfigPlugin {
             } catch (Throwable ignored) {
             }
         }
-        // Last resort: look for the class file
+        // Last resort: look for the class file (GeckoLib 4/5.4 or 5.5+)
         if (result == null) {
             try {
                 ClassLoader cl = GeckoLibMixinPlugin.class.getClassLoader();
-                result = cl != null && cl.getResource("software/bernie/geckolib/model/GeoModel.class") != null;
+                result = cl != null && (
+                        cl.getResource("software/bernie/geckolib/model/GeoModel.class") != null
+                                || cl.getResource("com/geckolib/model/GeoModel.class") != null
+                );
             } catch (Throwable ignored) {
                 result = false;
             }

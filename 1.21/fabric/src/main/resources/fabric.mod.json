@@ -30,5 +30,8 @@
     "java": ">=21",
     "architectury": ">=13.0.6",
     "fabric-api": "*"
+  },
+  "suggests": {
+    "geckolib": "*"
   }
 }

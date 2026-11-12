@@ -1,7 +1,8 @@
 plugins {
-    id 'dev.architectury.loom' version '1.17.477' apply false
-    id 'architectury-plugin' version '3.5.168'
-    id 'com.gradleup.shadow' version '8.3.6' apply false
+    // Minecraft 26.x+ is not obfuscated, so Loom is set up without remapping.
+    id 'dev.architectury.loom-no-remap' version '1.17.493' apply false
+    id 'architectury-plugin' version '3.5.170'
+    id 'com.gradleup.shadow' version '9.4.3' apply false
 }
 
 def buildNumberFile = file("../build_number.txt").exists() ? file("../build_number.txt") : file("build_number.txt")
@@ -23,11 +24,11 @@ def buildVer = "${project.mod_version}-b${buildNumberStr}${project.mod_tag}"
     def targetJar = file("${projDirName}/build/libs/${project.archives_name}-${projDirName}-${project.minecraft_version}-${buildVer}.jar")
     if (!targetJar.exists()) {
         libsDir.mkdirs()
-        def lastJar = libsDir.listFiles()?.findAll { 
-            it.name.endsWith(".jar") && 
-            !it.name.contains("sources") && 
+        def lastJar = libsDir.listFiles()?.findAll {
+            it.name.endsWith(".jar") &&
+            !it.name.contains("sources") &&
             !it.name.contains("transform") &&
-            it.name != targetJar.name 
+            it.name != targetJar.name
         }?.sort { it.lastModified() }
         if (lastJar && !lastJar.isEmpty()) {
             def sourceJar = lastJar.last()
@@ -42,7 +43,6 @@ def buildVer = "${project.mod_version}-b${buildNumberStr}${project.mod_tag}"
 tasks.register("incrementBuildNumber") {
     onlyIf { !project.hasProperty("skipBuildIncrement") }
     doLast {
-        // Check if any task in the execution graph failed
         boolean anyFailure = false
         gradle.taskGraph.allTasks.each { task ->
             if (task.state.failure != null) {
@@ -69,7 +69,7 @@ allprojects {
 }
 
 subprojects {
-    apply plugin: 'dev.architectury.loom'
+    apply plugin: 'dev.architectury.loom-no-remap'
     apply plugin: 'architectury-plugin'
     apply plugin: 'maven-publish'
 
@@ -82,30 +82,33 @@ subprojects {
         maven { url "https://maven.architectury.dev/" }
     }
 
-    loom {
-        silentMojangMappingsLicense()
-    }
-
     dependencies {
         minecraft "net.minecraft:minecraft:$rootProject.minecraft_version"
-        mappings loom.officialMojangMappings()
     }
 
     java {
         withSourcesJar()
 
-        sourceCompatibility = JavaVersion.VERSION_21
-        targetCompatibility = JavaVersion.VERSION_21
+        toolchain {
+            languageVersion = JavaLanguageVersion.of(25)
+        }
+
+        sourceCompatibility = JavaVersion.VERSION_25
+        targetCompatibility = JavaVersion.VERSION_25
     }
 
     tasks.withType(JavaCompile).configureEach {
-        it.options.release = 21
+        it.options.release = 25
     }
 
     publishing {
         publications {
             mavenJava(MavenPublication) {
                 artifactId = base.archivesName.get()
+                from components.java
+            }
+            mavenJavaAlias(MavenPublication) {
+                artifactId = "${rootProject.archives_name}-${project.name}-26.1"
                 from components.java
             }
         }

@@ -1,7 +1,7 @@
 package ddraig.net.azureframelib.client.theme;
 
 import ddraig.net.azureframelib.client.UIHelper;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.network.chat.Component;
 
 /**
@@ -116,12 +116,12 @@ public enum AzureTheme {
         return Component.literal(name().charAt(0) + name().substring(1).toLowerCase());
     }
 
-    public void drawPanel(GuiGraphics graphics, int x, int y, int width, int height) {
+    public void drawPanel(GuiGraphicsExtractor graphics, int x, int y, int width, int height) {
         graphics.fill(x, y, x + width, y + height, panelBg);
         UIHelper.drawOutline(graphics, x, y, width, height, panelBorder);
     }
 
-    public void drawSlot(GuiGraphics graphics, int x, int y) {
+    public void drawSlot(GuiGraphicsExtractor graphics, int x, int y) {
         graphics.fill(x, y, x + 18, y + 18, slotBg);
         graphics.fill(x, y, x + 18, y + 1, slotShadow);
         graphics.fill(x, y, x + 1, y + 18, slotShadow);

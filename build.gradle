@@ -1,9 +1,9 @@
 // Multi-version coordinator for AzureFrameLib.
-// Each Minecraft version lives in its own self-contained subfolder (1.20.1, 1.21, 1.21.1, 1.21.11, 26.1, 26.2)
+// Each Minecraft version lives in its own self-contained subfolder (1.20.1, 1.21, 1.21.1, 1.21.11, 26.1, 26.2, 26.3)
 // and shares build_number.txt in this root folder.
 
-def allVersions = ["1.20.1", "1.21", "1.21.1", "1.21.11", "26.1", "26.2"]
-def activeVersions = ["1.20.1", "1.21", "1.21.1"]
+def allVersions = ["1.20.1", "1.21", "1.21.1", "1.21.11", "26.1", "26.2", "26.3"]
+def activeVersions = ["1.20.1", "1.21", "1.21.1", "1.21.11", "26.1", "26.2", "26.3"]
 def isWindows = System.getProperty("os.name").toLowerCase().contains("windows")
 
 def buildNumberFile = file("build_number.txt")

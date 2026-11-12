@@ -20,14 +20,14 @@ config = "azureframelib.geckolib.mixins.json"
 [[dependencies.azureframelib]]
 modId = "neoforge"
 type = "required"
-versionRange = "[21.0,)"
+versionRange = "[21.1,)"
 ordering = "NONE"
 side = "BOTH"
 
 [[dependencies.azureframelib]]
 modId = "minecraft"
 type = "required"
-versionRange = "[1.21,)"
+versionRange = "[1.21.1,)"
 ordering = "NONE"
 side = "BOTH"
 
@@ -35,5 +35,12 @@ side = "BOTH"
 modId = "architectury"
 type = "required"
 versionRange = "[13.0.6,)"
+ordering = "AFTER"
+side = "BOTH"
+
+[[dependencies.azureframelib]]
+modId = "geckolib"
+type = "optional"
+versionRange = "[4.5,)"
 ordering = "AFTER"
 side = "BOTH"

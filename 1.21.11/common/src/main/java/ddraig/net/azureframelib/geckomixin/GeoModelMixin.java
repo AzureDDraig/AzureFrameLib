@@ -16,18 +16,13 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
  * Fixes for GeckoLib models that use AzureFrameLib assets (only in AzureFrameLib's namespaces).
- * <ul>
- *   <li>Loads models and animations on demand the first time an entity or screen asks for them,
- *   instead of pre-baking thousands of unused files into RAM at startup.</li>
- *   <li>Many models replace {@code getBakedModel} without calling GeckoLib's version, so GeckoLib
- *   never learns the model's bones and skips every animation. Before animating, this makes sure
- *   the bones of the model being drawn are known to the animation system.</li>
- *   <li>Lets mods ask for "idle" when the animation file calls it "animation.dragon.idle".</li>
- * </ul>
- * Everything is wrapped so a problem here can never crash rendering.
+ * Supports GeckoLib 4.x, 5.4 (software.bernie.geckolib) and 5.5+ (com.geckolib).
  */
 @Pseudo
-@Mixin(targets = "software.bernie.geckolib.model.GeoModel", remap = false)
+@Mixin(targets = {
+        "software.bernie.geckolib.model.GeoModel",
+        "com.geckolib.model.GeoModel"
+}, remap = false)
 public abstract class GeoModelMixin {
 
     @Unique
@@ -60,7 +55,7 @@ public abstract class GeoModelMixin {
         }
     }
 
-    @Inject(method = "getAnimation", at = @At("HEAD"), require = 0)
+    @Inject(method = {"getAnimation", "getBakedAnimation"}, at = @At("HEAD"), require = 0)
     private void azureframelib$ensureAnimationLoaded(@Coerce Object animatable, String name, CallbackInfoReturnable<Object> cir) {
         if (name == null) return;
         try {
@@ -69,7 +64,7 @@ public abstract class GeoModelMixin {
         }
     }
 
-    @Inject(method = "getAnimation", at = @At("RETURN"), cancellable = true, require = 0)
+    @Inject(method = {"getAnimation", "getBakedAnimation"}, at = @At("RETURN"), cancellable = true, require = 0)
     private void azureframelib$shortAnimationNames(@Coerce Object animatable, String name, CallbackInfoReturnable<Object> cir) {
         if (cir.getReturnValue() != null || name == null || !AzureFrameLibConfig.get().addShortAnimationNames) return;
         try {

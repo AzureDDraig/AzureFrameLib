@@ -12,14 +12,14 @@ import java.util.Optional;
 import java.util.function.Function;
 
 /**
- * Compatibility bridge for Minecraft 1.21.11+ where HierarchicalModel was merged into Model.
+ * Compatibility bridge for Minecraft 1.21.11+ / 26.x+ where HierarchicalModel was merged into Model.
  * Keeps JavaModelLoader and downstream mods source-compatible across all versions.
  */
 public abstract class HierarchicalModel<E extends Entity> {
     private final Function<Identifier, RenderType> renderType;
 
     protected HierarchicalModel() {
-        this(RenderTypes::entityCutoutNoCull);
+        this(RenderTypes::entityCutout);
     }
 
     protected HierarchicalModel(Function<Identifier, RenderType> renderType) {

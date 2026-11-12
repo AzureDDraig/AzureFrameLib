@@ -1,6 +1,7 @@
 package ddraig.net.azureframelib.compat.geckolib;
 
 import com.google.common.collect.MapMaker;
+import ddraig.net.azureframelib.client.GeckoLibModelLoader;
 import ddraig.net.azureframelib.config.AzureFrameLibConfig;
 import ddraig.net.azureframelib.resource.AzureAssetIndex;
 import net.minecraft.resources.Identifier;
@@ -14,16 +15,16 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * Lets mods ask for an animation by its short name ("idle") when the file names it in full
  * ("animation.dragon.idle"), and ensures model bones are registered with GeckoLib's
- * AnimationProcessor before animating.
+ * AnimationProcessor before animating (GeckoLib 4.x).
  * <p>
- * Uses reflection so AzureFrameLib compiles without GeckoLib and supports both GeckoLib 4.4
- * and 4.5+ (1.21+) method and package layouts.
+ * Uses reflection so AzureFrameLib compiles without GeckoLib and supports GeckoLib 4.x,
+ * 5.4 (software.bernie.geckolib) and 5.5+ (com.geckolib).
  */
 public final class ShortAnimationNames {
 
     private static final Map<Object, Map<String, Optional<Object>>> CACHE = new MapMaker().weakKeys().makeMap();
     private static volatile boolean initialized;
-    private static Method getBakedAnimationsMethod;
+    private static boolean available;
     private static Method bakedAnimationsMapMethod;
     private static Method getModelResource1;
     private static Method getModelResource2;
@@ -39,59 +40,70 @@ public final class ShortAnimationNames {
     }
 
     private static boolean init() {
-        if (initialized) return getBakedAnimationsMethod != null;
+        if (initialized) return available;
         synchronized (ShortAnimationNames.class) {
-            if (initialized) return getBakedAnimationsMethod != null;
+            if (initialized) return available;
             try {
-                Class<?> cacheCls = Class.forName("software.bernie.geckolib.cache.GeckoLibCache");
-                getBakedAnimationsMethod = cacheCls.getMethod("getBakedAnimations");
-
-                Class<?> bakedAnimsCls = Class.forName("software.bernie.geckolib.loading.object.BakedAnimations");
-                bakedAnimationsMapMethod = bakedAnimsCls.getMethod("animations");
-
-                Class<?> geoModelCls = Class.forName("software.bernie.geckolib.model.GeoModel");
-                for (Method m : geoModelCls.getMethods()) {
-                    switch (m.getName()) {
-                        case "getModelResource" -> {
-                            if (m.getParameterCount() == 1) getModelResource1 = m;
-                            else if (m.getParameterCount() == 2) getModelResource2 = m;
-                        }
-                        case "getAnimationResource" -> {
-                            if (m.getParameterCount() == 1) getAnimationResource = m;
-                        }
-                        case "getBakedModel" -> {
-                            if (m.getParameterCount() == 1) getBakedModel = m;
-                        }
-                        case "getAnimationProcessor" -> {
-                            if (m.getParameterCount() == 0) getAnimationProcessor = m;
-                        }
-                    }
-                }
-
-                Class<?> bakedGeoModelCls = Class.forName("software.bernie.geckolib.cache.object.BakedGeoModel");
-                topLevelBones = bakedGeoModelCls.getMethod("topLevelBones");
-
-                Class<?> geoBoneCls = Class.forName("software.bernie.geckolib.cache.object.GeoBone");
-                boneGetName = geoBoneCls.getMethod("getName");
-
-                Class<?> processorCls = findClass(
-                        "software.bernie.geckolib.animation.AnimationProcessor",
-                        "software.bernie.geckolib.core.animation.AnimationProcessor"
+                Class<?> bakedAnimsCls = findClass(
+                        "software.bernie.geckolib.loading.object.BakedAnimations",
+                        "com.geckolib.cache.animation.BakedAnimations"
                 );
-                if (processorCls != null) {
-                    processorGetBone = processorCls.getMethod("getBone", String.class);
-                    for (Method m : processorCls.getMethods()) {
-                        if (m.getName().equals("setActiveModel") && m.getParameterCount() == 1) {
-                            processorSetActiveModel = m;
-                            break;
+                if (bakedAnimsCls != null) {
+                    bakedAnimationsMapMethod = bakedAnimsCls.getMethod("animations");
+                }
+
+                Class<?> geoModelCls = findClass(
+                        "software.bernie.geckolib.model.GeoModel",
+                        "com.geckolib.model.GeoModel"
+                );
+                if (geoModelCls != null) {
+                    for (Method m : geoModelCls.getMethods()) {
+                        switch (m.getName()) {
+                            case "getModelResource" -> {
+                                if (m.getParameterCount() == 1) getModelResource1 = m;
+                                else if (m.getParameterCount() == 2) getModelResource2 = m;
+                            }
+                            case "getAnimationResource" -> {
+                                if (m.getParameterCount() == 1) getAnimationResource = m;
+                            }
+                            case "getBakedModel" -> {
+                                if (m.getParameterCount() == 1) getBakedModel = m;
+                            }
+                            case "getAnimationProcessor" -> {
+                                if (m.getParameterCount() == 0) getAnimationProcessor = m;
+                            }
                         }
                     }
                 }
+
+                // Optional GeckoLib 4.x AnimationProcessor bone registration
+                try {
+                    Class<?> bakedGeoModelCls = Class.forName("software.bernie.geckolib.cache.object.BakedGeoModel");
+                    topLevelBones = bakedGeoModelCls.getMethod("topLevelBones");
+                    Class<?> geoBoneCls = Class.forName("software.bernie.geckolib.cache.object.GeoBone");
+                    boneGetName = geoBoneCls.getMethod("getName");
+                    Class<?> processorCls = findClass(
+                            "software.bernie.geckolib.animation.AnimationProcessor",
+                            "software.bernie.geckolib.core.animation.AnimationProcessor"
+                    );
+                    if (processorCls != null) {
+                        processorGetBone = processorCls.getMethod("getBone", String.class);
+                        for (Method m : processorCls.getMethods()) {
+                            if (m.getName().equals("setActiveModel") && m.getParameterCount() == 1) {
+                                processorSetActiveModel = m;
+                                break;
+                            }
+                        }
+                    }
+                } catch (Throwable ignored) {
+                }
+
+                available = bakedAnimationsMapMethod != null && geoModelCls != null;
             } catch (Throwable ignored) {
-                getBakedAnimationsMethod = null;
+                available = false;
             }
             initialized = true;
-            return getBakedAnimationsMethod != null;
+            return available;
         }
     }
 
@@ -146,7 +158,7 @@ public final class ShortAnimationNames {
         try {
             Identifier loc = (Identifier) getAnimationResource.invoke(geoModel, animatable);
             if (loc == null || !AzureAssetIndex.isManagedNamespace(loc.getNamespace())) return;
-            ddraig.net.azureframelib.client.GeckoLibModelLoader.ensureAnimationInCache(loc);
+            GeckoLibModelLoader.ensureAnimationInCache(loc);
         } catch (Throwable ignored) {
         }
     }
@@ -159,10 +171,9 @@ public final class ShortAnimationNames {
             if (getAnimationResource == null) return null;
             Identifier loc = (Identifier) getAnimationResource.invoke(geoModel, animatable);
             if (loc == null || !AzureAssetIndex.isManagedNamespace(loc.getNamespace())) return null;
-            Map<?, ?> allBaked = (Map<?, ?>) getBakedAnimationsMethod.invoke(null);
-            Object baked = allBaked != null ? allBaked.get(loc) : null;
+            Object baked = GeckoLibModelLoader.getCachedBakedAnimations(loc);
             if (baked == null) {
-                baked = ddraig.net.azureframelib.client.GeckoLibModelLoader.getOrLoadBakedAnimations(loc);
+                baked = GeckoLibModelLoader.getOrLoadBakedAnimations(loc);
             }
             return find(baked, requested);
         } catch (Throwable ignored) {
