@@ -1,0 +1,13 @@
+{
+  "required": false,
+  "package": "ddraig.net.azureframelib.geckomixin",
+  "plugin": "ddraig.net.azureframelib.compat.geckolib.GeckoLibMixinPlugin",
+  "compatibilityLevel": "JAVA_17",
+  "minVersion": "0.8",
+  "client": [
+    "GeoModelMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 0
+  }
+}
