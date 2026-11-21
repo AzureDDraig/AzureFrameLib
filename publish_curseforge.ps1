@@ -162,6 +162,8 @@ foreach ($v in $CfVersions) {
 # ---------------------------------------------------------------------------
 $UploadPlan = New-Object System.Collections.Generic.List[object]
 $SampleBuildVer = $null
+$RootPropsPath = Join-Path $RootDir "gradle.properties"
+$RootProps = if (Test-Path $RootPropsPath) { Read-GradleProperties $RootPropsPath } else { @{} }
 
 foreach ($verFolder in $MinecraftVersions) {
     $verDir = Join-Path $RootDir $verFolder
@@ -170,8 +172,8 @@ foreach ($verFolder in $MinecraftVersions) {
     }
 
     $props = Read-GradleProperties (Join-Path $verDir "gradle.properties")
-    $modVersion = $props["mod_version"]
-    $modTag = $props["mod_tag"]
+    $modVersion = if ($RootProps.ContainsKey("mod_version")) { $RootProps["mod_version"] } else { $props["mod_version"] }
+    $modTag = if ($RootProps.ContainsKey("mod_tag")) { $RootProps["mod_tag"] } else { $props["mod_tag"] }
     $mcVersion = $props["minecraft_version"]
     $archivesName = $props["archives_name"]
     $platforms = @("fabric", "forge", "neoforge") | Where-Object { Test-Path (Join-Path $verDir $_) }
