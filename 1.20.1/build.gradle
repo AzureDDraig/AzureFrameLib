@@ -11,9 +11,19 @@ if (!buildNumberFile.exists()) {
 def buildNumber = buildNumberFile.text.trim().toInteger()
 def buildNumberStr = String.format("%03d", buildNumber)
 
+def sharedProps = new Properties()
+def sharedPropsFile = file("../gradle.properties")
+if (sharedPropsFile.exists()) {
+    sharedPropsFile.withInputStream { sharedProps.load(it) }
+}
+def sharedModVersion = sharedProps.getProperty("mod_version", project.mod_version).trim()
+def sharedModTag = sharedProps.getProperty("mod_tag", project.mod_tag).trim()
+
 ext {
     buildNumberVal = buildNumber
     buildNumberStrVal = buildNumberStr
+    mod_version = sharedModVersion
+    mod_tag = sharedModTag
 }
 
 // Workaround for Loom configuration phase requiring project dependency JARs to exist before compile

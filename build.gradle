@@ -1,6 +1,6 @@
 // Multi-version coordinator for AzureFrameLib.
 // Each Minecraft version lives in its own self-contained subfolder (1.20.1, 1.21, 1.21.1, 1.21.8, 1.21.11, 26.1, 26.2, 26.3)
-// and shares build_number.txt in this root folder.
+// and shares build_number.txt and gradle.properties (mod_version, mod_tag) in this root folder.
 
 def allVersions = ["1.20.1", "1.21", "1.21.1", "1.21.8", "1.21.11", "26.1", "26.2", "26.3"]
 def activeVersions = ["1.20.1", "1.21", "1.21.1", "1.21.8", "1.21.11", "26.1", "26.2", "26.3"]
@@ -12,6 +12,7 @@ if (!buildNumberFile.exists()) {
 }
 
 tasks.register("incrementBuildNumber") {
+    onlyIf { !project.hasProperty("skipBuildIncrement") }
     doLast {
         boolean anyFailure = false
         gradle.taskGraph.allTasks.each { task ->
@@ -36,9 +37,17 @@ allVersions.each { ver ->
             description = "Runs ${taskName} inside ${ver}/"
             workingDir = file(ver)
             def wrapper = file("${ver}/${isWindows ? 'gradlew.bat' : 'gradlew'}").absolutePath
-            def args = [taskName, "--console=plain"]
-            if (taskName == "deployToDev") {
-                args.add("-PskipBuildIncrement=true")
+            def args = [taskName, "--console=plain", "-PskipBuildIncrement=true"]
+            if (ver.startsWith("26.")) {
+                def jdk25 = new File(System.getProperty("user.home"), ".gradle/jdks/eclipse_adoptium-25-amd64-windows.2")
+                if (jdk25.exists()) {
+                    environment "JAVA_HOME", jdk25.absolutePath
+                }
+            } else {
+                def jdk21 = new File(System.getProperty("user.home"), ".gradle/jdks/eclipse_adoptium-21-amd64-windows.2")
+                if (jdk21.exists()) {
+                    environment "JAVA_HOME", jdk21.absolutePath
+                }
             }
             commandLine = isWindows ? (["cmd", "/c", wrapper] + args) : ([wrapper] + args)
         }
@@ -46,6 +55,11 @@ allVersions.each { ver ->
 }
 
 ["compileJava", "assemble", "build", "publishToMavenLocal", "deployToDev"].each { taskName ->
+    for (int i = 1; i < activeVersions.size(); i++) {
+        def prev = "${taskName}_${activeVersions[i - 1].replace('.', '_')}"
+        def curr = "${taskName}_${activeVersions[i].replace('.', '_')}"
+        tasks.named(curr).configure { mustRunAfter(prev) }
+    }
     tasks.register(taskName) {
         group = "azureframelib"
         description = "Runs ${taskName} across active versions (${activeVersions.join(', ')})"
