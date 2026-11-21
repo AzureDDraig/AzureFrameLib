@@ -1,0 +1,33 @@
+modLoader = "javafml"
+loaderVersion = "[58,)"
+license = "MIT"
+
+[[mods]]
+modId = "azureframelib"
+version = "${version}"
+displayName = "AzureFrameLib"
+authors = "Azureddraig"
+description = '''
+Shared library and dynamic resource framework for Minecraft mods.
+'''
+
+[[dependencies.azureframelib]]
+modId = "forge"
+mandatory = true
+versionRange = "[58,)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.azureframelib]]
+modId = "minecraft"
+mandatory = true
+versionRange = "[1.21.8,)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.azureframelib]]
+modId = "geckolib"
+mandatory = false
+versionRange = "[5.2,)"
+ordering = "AFTER"
+side = "BOTH"

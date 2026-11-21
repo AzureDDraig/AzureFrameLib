@@ -35,6 +35,7 @@ public final class ShortAnimationNames {
     private static Method boneGetName;
     private static Method processorGetBone;
     private static Method processorSetActiveModel;
+    private static Method animStateRenderState;
 
     private ShortAnimationNames() {
     }
@@ -83,6 +84,7 @@ public final class ShortAnimationNames {
                     Class<?> geoBoneCls = Class.forName("software.bernie.geckolib.cache.object.GeoBone");
                     boneGetName = geoBoneCls.getMethod("getName");
                     Class<?> processorCls = findClass(
+                            "software.bernie.geckolib.animatable.processing.AnimationProcessor",
                             "software.bernie.geckolib.animation.AnimationProcessor",
                             "software.bernie.geckolib.core.animation.AnimationProcessor"
                     );
@@ -94,6 +96,10 @@ public final class ShortAnimationNames {
                                 break;
                             }
                         }
+                    }
+                    Class<?> animStateCls = findClass("software.bernie.geckolib.animatable.processing.AnimationState");
+                    if (animStateCls != null) {
+                        animStateRenderState = animStateCls.getMethod("renderState");
                     }
                 } catch (Throwable ignored) {
                 }
@@ -117,14 +123,18 @@ public final class ShortAnimationNames {
         return null;
     }
 
-    public static Identifier getModelResourceOf(Object geoModel, Object animatable) {
+    public static Identifier getModelResourceOf(Object geoModel, Object animatableOrState) {
         if (!init() || geoModel == null) return null;
         try {
+            Object arg = animatableOrState;
+            if (arg != null && animStateRenderState != null && animStateRenderState.getDeclaringClass().isInstance(arg)) {
+                arg = animStateRenderState.invoke(arg);
+            }
             if (getModelResource1 != null) {
-                return (Identifier) getModelResource1.invoke(geoModel, animatable);
+                return (Identifier) getModelResource1.invoke(geoModel, arg);
             }
             if (getModelResource2 != null) {
-                return (Identifier) getModelResource2.invoke(geoModel, animatable, null);
+                return (Identifier) getModelResource2.invoke(geoModel, arg, null);
             }
         } catch (Throwable ignored) {
         }

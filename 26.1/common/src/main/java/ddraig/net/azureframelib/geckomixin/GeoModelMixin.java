@@ -41,9 +41,19 @@ public abstract class GeoModelMixin {
 
     @Inject(method = "handleAnimations", at = @At("HEAD"), require = 0)
     private void azureframelib$registerBones(@Coerce Object animatable, long instanceId, @Coerce Object animationState, CallbackInfo ci) {
+        azureframelib$doRegisterBones(animatable);
+    }
+
+    @Inject(method = "handleAnimations", at = @At("HEAD"), require = 0)
+    private void azureframelib$registerBones5(@Coerce Object animationState, CallbackInfo ci) {
+        azureframelib$doRegisterBones(animationState);
+    }
+
+    @Unique
+    private void azureframelib$doRegisterBones(Object animatableOrState) {
         if (!AzureFrameLibConfig.get().fixAnimationBones) return;
         try {
-            Identifier res = ShortAnimationNames.getModelResourceOf(this, animatable);
+            Identifier res = ShortAnimationNames.getModelResourceOf(this, animatableOrState);
             if (res == null) return;
             if (!res.equals(this.azureframelib$lastModelRes)) {
                 this.azureframelib$lastModelRes = res;
