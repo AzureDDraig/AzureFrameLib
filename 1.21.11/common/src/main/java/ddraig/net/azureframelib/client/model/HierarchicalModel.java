@@ -1,4 +1,4 @@
-package net.minecraft.client.model;
+package ddraig.net.azureframelib.client.model;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
@@ -12,14 +12,14 @@ import java.util.Optional;
 import java.util.function.Function;
 
 /**
- * Compatibility bridge for Minecraft 1.21.11+ / 26.x+ where HierarchicalModel was merged into Model.
+ * Compatibility bridge for Minecraft 1.21.11+ where HierarchicalModel was merged into Model.
  * Keeps JavaModelLoader and downstream mods source-compatible across all versions.
  */
 public abstract class HierarchicalModel<E extends Entity> {
     private final Function<Identifier, RenderType> renderType;
 
     protected HierarchicalModel() {
-        this(RenderTypes::entityCutout);
+        this(RenderTypes::entityCutoutNoCull);
     }
 
     protected HierarchicalModel(Function<Identifier, RenderType> renderType) {

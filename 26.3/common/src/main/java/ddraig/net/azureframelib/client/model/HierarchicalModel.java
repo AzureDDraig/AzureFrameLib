@@ -1,31 +1,32 @@
-package net.minecraft.client.model;
+package ddraig.net.azureframelib.client.model;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.client.model.geom.ModelPart;
-import net.minecraft.client.renderer.RenderType;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.client.renderer.rendertype.RenderType;
+import net.minecraft.client.renderer.rendertype.RenderTypes;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.Entity;
 
 import java.util.Optional;
 import java.util.function.Function;
 
 /**
- * Compatibility bridge for Minecraft 1.21.2+ where HierarchicalModel was merged into Model.
+ * Compatibility bridge for Minecraft 1.21.11+ / 26.x+ where HierarchicalModel was merged into Model.
  * Keeps JavaModelLoader and downstream mods source-compatible across all versions.
  */
 public abstract class HierarchicalModel<E extends Entity> {
-    private final Function<ResourceLocation, RenderType> renderType;
+    private final Function<Identifier, RenderType> renderType;
 
     protected HierarchicalModel() {
-        this(RenderType::entityCutoutNoCull);
+        this(RenderTypes::entityCutout);
     }
 
-    protected HierarchicalModel(Function<ResourceLocation, RenderType> renderType) {
+    protected HierarchicalModel(Function<Identifier, RenderType> renderType) {
         this.renderType = renderType;
     }
 
-    public final RenderType renderType(ResourceLocation location) {
+    public final RenderType renderType(Identifier location) {
         return this.renderType.apply(location);
     }
 

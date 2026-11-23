@@ -17,15 +17,15 @@
     Lets you test pasting a changelog (or pass -Changelog "Test") and previews all 20 JARs without uploading.
 
 .EXAMPLE
-    .\publish_curseforge.ps1 -ReleaseType release
-    Overrides automatic release type detection ('a'=alpha, 'b'=beta) to 'release'.
+    .\publish_curseforge.ps1 -ReleaseType beta
+    Overrides the default 'release' upload type if needed.
 #>
 [CmdletBinding()]
 param(
     [switch]$DryRun,
     [switch]$Yes,
     [ValidateSet("auto", "alpha", "beta", "release")]
-    [string]$ReleaseType = "auto",
+    [string]$ReleaseType = "release",
     [string[]]$MinecraftVersions = @(),
     [string]$BuildNumberOverride = "",
     [string]$ChangelogFile = "",
@@ -192,20 +192,12 @@ foreach ($verFolder in $MinecraftVersions) {
         "release"
     }
 
-    # Resolve Minecraft version IDs (for 26.1.x, tag 26.1, 26.1.1, and 26.1.2 since mod accepts >=26.1)
+    # Resolve exact Minecraft version ID from gradle.properties (e.g. 26.1 -> 26.1.2)
     $mcNames = New-Object System.Collections.Generic.List[string]
-    if ($verFolder -eq "26.1") {
-        foreach ($candidate in @("26.1", "26.1.1", "26.1.2", $mcVersion)) {
-            if ($McVersionMap.ContainsKey($candidate) -and -not $mcNames.Contains($candidate)) {
-                $mcNames.Add($candidate)
-            }
-        }
-    } else {
-        if ($McVersionMap.ContainsKey($mcVersion)) {
-            $mcNames.Add($mcVersion)
-        } elseif ($McVersionMap.ContainsKey($verFolder)) {
-            $mcNames.Add($verFolder)
-        }
+    if ($McVersionMap.ContainsKey($mcVersion)) {
+        $mcNames.Add($mcVersion)
+    } elseif ($McVersionMap.ContainsKey($verFolder)) {
+        $mcNames.Add($verFolder)
     }
     if ($mcNames.Count -eq 0) {
         throw "Could not resolve CurseForge Minecraft version ID for folder '$verFolder' (minecraft_version='$mcVersion')."
