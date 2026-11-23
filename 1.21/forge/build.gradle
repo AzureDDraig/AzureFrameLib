@@ -68,32 +68,33 @@ tasks.register("backupToRepo", Copy) {
     }
 }
 
-tasks.register("deployToDev", Copy) {
+tasks.register("deployToDev") {
     dependsOn remapJar, backupToRepo
-    from remapJar.archiveFile
-    into "C:/Users/Ddraig__/curseforge/minecraft/Instances/dev-forge-121/mods"
-
-    doFirst {
-        ["C:/Users/Ddraig__/curseforge/minecraft/Instances/dev-forge-121/mods",
-         "C:/Users/Ddraig__/curseforge/minecraft/Instances/devforge121/mods"].each { path ->
-            def targetDir = file(path)
-            if (targetDir.exists()) {
-                targetDir.listFiles().each { file ->
-                    if (file.name.startsWith("${rootProject.archives_name}-forge-") && file.name.endsWith(".jar")) {
-                        println "Deleting old deploy jar: ${file.name}"
-                        file.delete()
-                    }
+    doLast {
+        def instancesRoot = file("C:/Users/Ddraig__/curseforge/minecraft/Instances")
+        def baseNames = ["dev-forge-121", "devforge121"]
+        if (!instancesRoot.exists()) return
+        def matchingInstances = instancesRoot.listFiles()?.findAll { dir ->
+            dir.isDirectory() && baseNames.any { base ->
+                dir.name.equalsIgnoreCase(base) || dir.name.toLowerCase().startsWith(base.toLowerCase() + " (")
+            }
+        } ?: []
+        def cfProfiles = matchingInstances.findAll { new File(it, "minecraftinstance.json").exists() }
+        def targets = cfProfiles.isEmpty() ? matchingInstances : cfProfiles
+        targets.each { instDir ->
+            def modsDir = new File(instDir, "mods")
+            if (!modsDir.exists()) modsDir.mkdirs()
+            modsDir.listFiles()?.each { f ->
+                if (f.name.startsWith("${rootProject.archives_name}-forge-") && f.name.endsWith(".jar")) {
+                    println "Deleting old deploy jar in ${instDir.name}: ${f.name}"
+                    f.delete()
                 }
             }
-        }
-    }
-    doLast {
-        def altDir = file("C:/Users/Ddraig__/curseforge/minecraft/Instances/devforge121/mods")
-        if (altDir.exists()) {
             copy {
                 from remapJar.archiveFile
-                into altDir
+                into modsDir
             }
+            println "Deployed ${remapJar.archiveFile.get().asFile.name} to ${modsDir.absolutePath}"
         }
     }
 }
